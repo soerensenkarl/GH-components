@@ -1,18 +1,27 @@
 """Collider - trims wall studs around openings and removes overlaps
-to produce a complete, non-overlapping wall frame.
+to produce stratified, non-overlapping wall framing.
 
 GHPython component (Rhino 7 / GhPython)
 Inputs:
-    P   - Tree of closed planar wall boundary polylines   [Curve, tree access]
-    W   - Tree of window polylines, branches matching P    [Curve, tree access]
-    D   - Tree of door polylines, branches matching P      [Curve, tree access]
-    WS  - Wall studs from WallFramer (S output)            [Curve, tree access]
-    PL  - Plates from WallFramer (merge TP + BP)           [Curve, tree access]
-    KS  - King studs (merge WindowFramer S + DoorFramer S) [Curve, tree access]
-    OH  - Opening horizontals (merge all H + SL)           [Curve, tree access]
+    P   - Tree of closed planar wall boundary polylines    [Curve, tree access]
+    W   - Tree of window polylines, branches matching P     [Curve, tree access]
+    D   - Tree of door polylines, branches matching P       [Curve, tree access]
+    WS  - Wall studs from WallFramer (S output)             [Curve, tree access]
+    PL  - Plates from WallFramer (merge TP + BP)            [Curve, tree access]
+    WKS - Window king studs (WindowFramer S / ST output)    [Curve, tree access]
+    DKS - Door king studs (DoorFramer S / ST output)        [Curve, tree access]
+    WH  - Window headers (WindowFramer H output)            [Curve, tree access]
+    DH  - Door headers (DoorFramer H output)                [Curve, tree access]
+    SL  - Window sills (WindowFramer SL output)             [Curve, tree access]
 Outputs:
-    S   - Trimmed wall studs (cripple + surviving full studs)
-    F   - All framing combined (no overlaps)
+    oWS  - Trimmed wall studs (cripple + surviving full studs)
+    oWKS - Window king studs (trimmed against plates)
+    oDKS - Door king studs (trimmed against plates)
+    oWH  - Window headers (trimmed against plates)
+    oDH  - Door headers (trimmed against plates)
+    oSL  - Window sills (trimmed against plates)
+    oPL  - Plates (passed through)
+    F    - All framing combined (no overlaps)
 """
 import Rhino
 import Rhino.Geometry as rg
@@ -179,22 +188,53 @@ def GetBranch(tree, b):
     return []
 
 
+def Remap2DList(curves, lp):
+    """Remap a list of 3D curves to 2D, filtering by wall plane."""
+    out = []
+    for c in curves:
+        if c is None: continue
+        c2d = To2D(c, lp)
+        if c2d is not None:
+            out.append(c2d)
+    return out
+
+
+def TrimAndEmit(curves_2d, pl_2d, lp, path, *trees):
+    """Trim curves against plates, map back to 3D, add to all given trees."""
+    for c2d in curves_2d:
+        if pl_2d:
+            pieces = FilterSlivers(SubtractObstacles([c2d], pl_2d))
+        else:
+            pieces = [c2d]
+        for p in pieces:
+            mapped = MapBack(p, lp)
+            for tree in trees:
+                tree.Add(mapped, path)
 
 
 # -- Main ------------------------------------------------------
 
-outS = gh.DataTree[System.Object]()
-outF = gh.DataTree[System.Object]()
+outWS  = gh.DataTree[System.Object]()
+outWKS = gh.DataTree[System.Object]()
+outDKS = gh.DataTree[System.Object]()
+outWH  = gh.DataTree[System.Object]()
+outDH  = gh.DataTree[System.Object]()
+outSL  = gh.DataTree[System.Object]()
+outPL  = gh.DataTree[System.Object]()
+outF   = gh.DataTree[System.Object]()
 
 for b in range(P.BranchCount):
     path    = P.Paths[b]
     walls   = P.Branches[b]
-    wins    = GetBranch(W,  b)
-    doors   = GetBranch(D,  b)
-    studs   = GetBranch(WS, b)
-    plates  = GetBranch(PL, b)
-    kings   = GetBranch(KS, b)
-    oHoriz  = GetBranch(OH, b)
+    wins    = GetBranch(W,   b)
+    doors   = GetBranch(D,   b)
+    studs   = GetBranch(WS,  b)
+    plates  = GetBranch(PL,  b)
+    wKings  = GetBranch(WKS, b)
+    dKings  = GetBranch(DKS, b)
+    wHeads  = GetBranch(WH,  b)
+    dHeads  = GetBranch(DH,  b)
+    sills   = GetBranch(SL,  b)
 
     for wall in walls:
         if wall is None or not wall.IsClosed:
@@ -221,29 +261,18 @@ for b in range(P.BranchCount):
                 openings_2d.append(Rect(bb.Min.X, bb.Min.Y, bb.Max.X, bb.Max.Y))
 
         # ---- Remap framing to 2D (filtered by wall plane) ----
-        ks_2d = []
-        for c in kings:
-            if c is None: continue
-            c2d = To2D(c, lp)
-            if c2d is not None:
-                ks_2d.append(c2d)
+        wks_2d = Remap2DList(wKings, lp)
+        dks_2d = Remap2DList(dKings, lp)
+        wh_2d  = Remap2DList(wHeads, lp)
+        dh_2d  = Remap2DList(dHeads, lp)
+        sl_2d  = Remap2DList(sills,  lp)
+        pl_2d  = Remap2DList(plates, lp)
 
-        oh_2d = []
-        for c in oHoriz:
-            if c is None: continue
-            c2d = To2D(c, lp)
-            if c2d is not None:
-                oh_2d.append(c2d)
-
-        pl_2d = []
-        for c in plates:
-            if c is None: continue
-            c2d = To2D(c, lp)
-            if c2d is not None:
-                pl_2d.append(c2d)
+        all_ks_2d = wks_2d + dks_2d
+        all_oh_2d = wh_2d + dh_2d + sl_2d
 
         # ---- Process wall studs ----
-        trim_obstacles = openings_2d + oh_2d
+        trim_obstacles = openings_2d + all_oh_2d
         for ws_crv in studs:
             if ws_crv is None: continue
             ws_2d = To2D(ws_crv, lp)
@@ -251,7 +280,7 @@ for b in range(P.BranchCount):
 
             # Kill entirely if it collides with any king stud
             killed = False
-            for ks in ks_2d:
+            for ks in all_ks_2d:
                 if Collides(ws_2d, ks):
                     killed = True
                     break
@@ -265,36 +294,33 @@ for b in range(P.BranchCount):
                 pieces = [ws_2d]
 
             for p in pieces:
-                outS.Add(MapBack(p, lp), path)
-                outF.Add(MapBack(p, lp), path)
+                mapped = MapBack(p, lp)
+                outWS.Add(mapped, path)
+                outF.Add(mapped, path)
 
-        # ---- Trim king studs against plates ----
-        for c2d in ks_2d:
-            if pl_2d:
-                pieces = FilterSlivers(SubtractObstacles([c2d], pl_2d))
-            else:
-                pieces = [c2d]
-            for p in pieces:
-                outF.Add(MapBack(p, lp), path)
-
-        # ---- Trim opening horizontals against plates ----
-        for c2d in oh_2d:
-            if pl_2d:
-                pieces = FilterSlivers(SubtractObstacles([c2d], pl_2d))
-            else:
-                pieces = [c2d]
-            for p in pieces:
-                outF.Add(MapBack(p, lp), path)
+        # ---- Trim each framing category against plates ----
+        TrimAndEmit(wks_2d, pl_2d, lp, path, outWKS, outF)
+        TrimAndEmit(dks_2d, pl_2d, lp, path, outDKS, outF)
+        TrimAndEmit(wh_2d,  pl_2d, lp, path, outWH,  outF)
+        TrimAndEmit(dh_2d,  pl_2d, lp, path, outDH,  outF)
+        TrimAndEmit(sl_2d,  pl_2d, lp, path, outSL,  outF)
 
         # ---- Pass through plates ----
         for c in plates:
             if c is None: continue
             c2d = To2D(c, lp)
             if c2d is not None:
+                outPL.Add(c, path)
                 outF.Add(c, path)
 
 
 # -- Outputs ---------------------------------------------------
 
-S = outS
-F = outF
+oWS  = outWS
+oWKS = outWKS
+oDKS = outDKS
+oWH  = outWH
+oDH  = outDH
+oSL  = outSL
+oPL  = outPL
+F    = outF
