@@ -7,7 +7,8 @@ Inputs:
     W   - Tree of window polylines, branches matching P     [Curve, tree access]
     D   - Tree of door polylines, branches matching P       [Curve, tree access]
     WS  - Wall studs from WallFramer (S output)             [Curve, tree access]
-    PL  - Plates from WallFramer (merge TP + BP)            [Curve, tree access]
+    TP  - Top plates from WallFramer (TP output)            [Curve, tree access]
+    BP  - Bottom plates from WallFramer (BP output)         [Curve, tree access]
     WKS - Window king studs (WindowFramer S / ST output)    [Curve, tree access]
     DKS - Door king studs (DoorFramer S / ST output)        [Curve, tree access]
     WH  - Window headers (WindowFramer H output)            [Curve, tree access]
@@ -20,7 +21,8 @@ Outputs:
     oWH  - Window headers (trimmed against plates)
     oDH  - Door headers (trimmed against plates)
     oSL  - Window sills (trimmed against plates)
-    oPL  - Plates (passed through)
+    oTP  - Top plates (passed through)
+    oBP  - Bottom plates (passed through)
     F    - All framing combined (no overlaps)
 """
 import Rhino
@@ -220,7 +222,8 @@ outDKS = gh.DataTree[System.Object]()
 outWH  = gh.DataTree[System.Object]()
 outDH  = gh.DataTree[System.Object]()
 outSL  = gh.DataTree[System.Object]()
-outPL  = gh.DataTree[System.Object]()
+outTP  = gh.DataTree[System.Object]()
+outBP  = gh.DataTree[System.Object]()
 outF   = gh.DataTree[System.Object]()
 
 for b in range(P.BranchCount):
@@ -229,7 +232,8 @@ for b in range(P.BranchCount):
     wins    = GetBranch(W,   b)
     doors   = GetBranch(D,   b)
     studs   = GetBranch(WS,  b)
-    plates  = GetBranch(PL,  b)
+    tPlates = GetBranch(TP,  b)
+    bPlates = GetBranch(BP,  b)
     wKings  = GetBranch(WKS, b)
     dKings  = GetBranch(DKS, b)
     wHeads  = GetBranch(WH,  b)
@@ -265,8 +269,10 @@ for b in range(P.BranchCount):
         dks_2d = Remap2DList(dKings, lp)
         wh_2d  = Remap2DList(wHeads, lp)
         dh_2d  = Remap2DList(dHeads, lp)
-        sl_2d  = Remap2DList(sills,  lp)
-        pl_2d  = Remap2DList(plates, lp)
+        sl_2d  = Remap2DList(sills,   lp)
+        tp_2d  = Remap2DList(tPlates, lp)
+        bp_2d  = Remap2DList(bPlates, lp)
+        pl_2d  = tp_2d + bp_2d
 
         all_ks_2d = wks_2d + dks_2d
         all_oh_2d = wh_2d + dh_2d + sl_2d
@@ -306,11 +312,17 @@ for b in range(P.BranchCount):
         TrimAndEmit(sl_2d,  pl_2d, lp, path, outSL,  outF)
 
         # ---- Pass through plates ----
-        for c in plates:
+        for c in tPlates:
             if c is None: continue
             c2d = To2D(c, lp)
             if c2d is not None:
-                outPL.Add(c, path)
+                outTP.Add(c, path)
+                outF.Add(c, path)
+        for c in bPlates:
+            if c is None: continue
+            c2d = To2D(c, lp)
+            if c2d is not None:
+                outBP.Add(c, path)
                 outF.Add(c, path)
 
 
@@ -322,5 +334,6 @@ oDKS = outDKS
 oWH  = outWH
 oDH  = outDH
 oSL  = outSL
-oPL  = outPL
+oTP  = outTP
+oBP  = outBP
 F    = outF
