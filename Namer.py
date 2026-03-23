@@ -73,11 +73,27 @@ ROOF_COLOR_MAP = {
 }
 
 # ==========================================
+# FLOOR subcomponent maps (A=2, keyed by C)
+# ==========================================
+FLOOR_TYPE_MAP = {
+    0: "bj",  # bjaelke (joist)
+}
+
+FLOOR_LAYER_MAP = {
+    0: "HUS::Gulvbjaelke",
+}
+
+FLOOR_COLOR_MAP = {
+    0: System.Drawing.Color.FromArgb(244, 164, 96),   # Gulvbjaelke - sandy wood
+}
+
+# ==========================================
 # Typology dispatch: A index -> maps
 # ==========================================
 TYPOLOGY = {
     0: (WALL_TYPE_MAP, WALL_LAYER_MAP, WALL_COLOR_MAP),
     1: (ROOF_TYPE_MAP, ROOF_LAYER_MAP, ROOF_COLOR_MAP),
+    2: (FLOOR_TYPE_MAP, FLOOR_LAYER_MAP, FLOOR_COLOR_MAP),
 }
 
 prefix = K if K else "kit"
