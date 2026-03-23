@@ -3,9 +3,10 @@
 GHPython component (Rhino 7 / GhPython)
 Inputs:
     F   - Full frame tree from Collider (paths {A;B;C})  [Curve, tree access]
+    R   - Roof tree from Roofer (branch per roof surface) [Brep, tree access]
     K   - Kit prefix string (default "kit")              [str, item access]
 Outputs:
-    N   - Names matching the F tree structure
+    N   - Names matching the combined F + R tree structure
     L   - Layer names per element (HUS::type)
     C   - Display colors per element matching L
 """
@@ -19,6 +20,10 @@ import System.Drawing
 # 5 = window sills                                             -> bk (bundkarm)
 # 6 = top plates                                               -> tr (toprem)
 # 7 = bottom plates                                            -> br (bundrem)
+ROOF_TYPE = "sp"  # spaer (rafter)
+ROOF_LAYER = "HUS::Spaer"
+ROOF_COLOR = System.Drawing.Color.FromArgb(76, 175, 80)  # green
+
 TYPE_MAP = {
     0: "lp",
     1: "lp",
@@ -85,6 +90,23 @@ for i in range(F.BranchCount):
         outN.Add(name, bPath)
         outL.Add(layer, bPath)
         outC.Add(color, bPath)
+
+# --- Roof rafters from Roofer ---
+if R is not None:
+    for i in range(R.BranchCount):
+        branch = R.Branches[i]
+        bPath = R.Paths[i]
+
+        # B index = roof surface index from the path
+        B = bPath[bPath.Length - 1] if bPath.Length > 0 else i
+
+        for j in range(branch.Count):
+            key = (B, ROOF_TYPE)
+            counters[key] = counters.get(key, 0) + 1
+            name = "{}_{}_{}_{}".format(prefix, B, ROOF_TYPE, counters[key])
+            outN.Add(name, bPath)
+            outL.Add(ROOF_LAYER, bPath)
+            outC.Add(ROOF_COLOR, bPath)
 
 N = outN
 L = outL
