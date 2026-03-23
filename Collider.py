@@ -201,8 +201,9 @@ def Remap2DList(curves, lp):
     return out
 
 
-def TrimAndEmit(curves_2d, pl_2d, lp, path, *trees):
-    """Trim curves against plates, map back to 3D, add to all given trees."""
+def TrimAndEmit(curves_2d, pl_2d, lp, path, outF, fTypeIdx, *trees):
+    """Trim curves against plates, map back to 3D, add to category trees and F."""
+    fPath = path.AppendElement(fTypeIdx)
     for c2d in curves_2d:
         if pl_2d:
             pieces = FilterSlivers(SubtractObstacles([c2d], pl_2d))
@@ -212,6 +213,7 @@ def TrimAndEmit(curves_2d, pl_2d, lp, path, *trees):
             mapped = MapBack(p, lp)
             for tree in trees:
                 tree.Add(mapped, path)
+            outF.Add(mapped, fPath)
 
 
 # -- Main ------------------------------------------------------
@@ -299,31 +301,34 @@ for b in range(P.BranchCount):
             else:
                 pieces = [ws_2d]
 
+            fPathWS = path.AppendElement(0)
             for p in pieces:
                 mapped = MapBack(p, lp)
                 outWS.Add(mapped, path)
-                outF.Add(mapped, path)
+                outF.Add(mapped, fPathWS)
 
         # ---- Trim each framing category against plates ----
-        TrimAndEmit(wks_2d, pl_2d, lp, path, outWKS, outF)
-        TrimAndEmit(dks_2d, pl_2d, lp, path, outDKS, outF)
-        TrimAndEmit(wh_2d,  pl_2d, lp, path, outWH,  outF)
-        TrimAndEmit(dh_2d,  pl_2d, lp, path, outDH,  outF)
-        TrimAndEmit(sl_2d,  pl_2d, lp, path, outSL,  outF)
+        TrimAndEmit(wks_2d, pl_2d, lp, path, outF, 1, outWKS)
+        TrimAndEmit(dks_2d, pl_2d, lp, path, outF, 2, outDKS)
+        TrimAndEmit(wh_2d,  pl_2d, lp, path, outF, 3, outWH)
+        TrimAndEmit(dh_2d,  pl_2d, lp, path, outF, 4, outDH)
+        TrimAndEmit(sl_2d,  pl_2d, lp, path, outF, 5, outSL)
 
         # ---- Pass through plates ----
+        fPathTP = path.AppendElement(6)
+        fPathBP = path.AppendElement(7)
         for c in tPlates:
             if c is None: continue
             c2d = To2D(c, lp)
             if c2d is not None:
                 outTP.Add(c, path)
-                outF.Add(c, path)
+                outF.Add(c, fPathTP)
         for c in bPlates:
             if c is None: continue
             c2d = To2D(c, lp)
             if c2d is not None:
                 outBP.Add(c, path)
-                outF.Add(c, path)
+                outF.Add(c, fPathBP)
 
 
 # -- Outputs ---------------------------------------------------
