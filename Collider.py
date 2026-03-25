@@ -14,6 +14,8 @@ Inputs:
     WH  - Window headers (WindowFramer H output)            [Curve, tree access]
     DH  - Door headers (DoorFramer H output)                [Curve, tree access]
     SL  - Window sills (WindowFramer SL output)             [Curve, tree access]
+    VH  - Window vertical headers (WindowFramer VH output)  [Curve, tree access]
+    DVH - Door vertical headers (DoorFramer VH output)      [Curve, tree access]
 Outputs:
     oWS  - Trimmed wall studs (cripple + surviving full studs)
     oWKS - Window king studs (trimmed against plates)
@@ -21,6 +23,8 @@ Outputs:
     oWH  - Window headers (trimmed against plates)
     oDH  - Door headers (trimmed against plates)
     oSL  - Window sills (trimmed against plates)
+    oVH  - Window vertical headers (trimmed against plates, does not clip studs)
+    oDVH - Door vertical headers (trimmed against plates, does not clip studs)
     oTP  - Top plates (passed through)
     oBP  - Bottom plates (passed through)
     F    - All framing combined (no overlaps)
@@ -224,6 +228,8 @@ outDKS = gh.DataTree[System.Object]()
 outWH  = gh.DataTree[System.Object]()
 outDH  = gh.DataTree[System.Object]()
 outSL  = gh.DataTree[System.Object]()
+outVH  = gh.DataTree[System.Object]()
+outDVH = gh.DataTree[System.Object]()
 outTP  = gh.DataTree[System.Object]()
 outBP  = gh.DataTree[System.Object]()
 outF   = gh.DataTree[System.Object]()
@@ -331,6 +337,25 @@ for b in range(P.BranchCount):
                 outF.Add(c, fPathBP)
 
 
+# -- Pass through VH / DVH on their original input paths ------
+
+if VH is not None:
+    for i in range(VH.BranchCount):
+        vpath = VH.Paths[i]
+        for c in VH.Branches[i]:
+            if c is None: continue
+            outVH.Add(c, vpath)
+            outF.Add(c, vpath.AppendElement(8))
+
+if DVH is not None:
+    for i in range(DVH.BranchCount):
+        dvpath = DVH.Paths[i]
+        for c in DVH.Branches[i]:
+            if c is None: continue
+            outDVH.Add(c, dvpath)
+            outF.Add(c, dvpath.AppendElement(9))
+
+
 # -- Outputs ---------------------------------------------------
 
 oWS  = outWS
@@ -339,6 +364,8 @@ oDKS = outDKS
 oWH  = outWH
 oDH  = outDH
 oSL  = outSL
+oVH  = outVH
+oDVH = outDVH
 oTP  = outTP
 oBP  = outBP
 F    = outF

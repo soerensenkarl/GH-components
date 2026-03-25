@@ -1,5 +1,5 @@
-"""DoorFramer1 - generates king studs and header for each door opening,
-doubling studs that overlap with existing wall studs.
+"""DoorFramer1 - generates king studs, header, and optional vertical header
+for each door opening, doubling studs that overlap with existing wall studs.
 
 GHPython component (Rhino 7 / GhPython)
 Inputs:
@@ -7,9 +7,11 @@ Inputs:
     D  - Tree of door polylines, branches matching P     [Curve, tree access]
     S  - Tree of existing stud polylines on the wall     [Curve, tree access]
     T  - Timber thickness (float)                        [float, item access]
+    V  - Height of vertical header above main header (float, 0 = omit) [float, item access]
 Outputs:
     ST - King studs (doubled where they overlap existing studs)
-    H  - Headers (one per door)
+    H  - Horizontal headers (one per door)
+    VH - Vertical header above main header (one per door, only when V > 0)
 """
 import Rhino
 import Rhino.Geometry as rg
@@ -138,6 +140,7 @@ def XOverlaps(bb1_minX, bb1_maxX, bb2_minX, bb2_maxX, tol=0.001):
 
 outST = gh.DataTree[System.Object]()
 outH  = gh.DataTree[System.Object]()
+outVH = gh.DataTree[System.Object]()
 
 for b in range(P.BranchCount):
     path  = P.Paths[b]
@@ -211,8 +214,14 @@ for b in range(P.BranchCount):
             ClipAdd(Rect(dx0, dy1, dx1, dy1 + T),
                     wb, lp, outH, path)
 
+            # Vertical header above main header (spanning full king stud width)
+            if V and V > 0:
+                ClipAdd(Rect(dx0 - T, dy1 + T, dx1 + T, dy1 + T + V),
+                        wb, lp, outVH, path)
+
 
 # -- Outputs ---------------------------------------------------
 
 ST = outST
 H  = outH
+VH = outVH

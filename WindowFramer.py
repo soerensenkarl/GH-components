@@ -1,5 +1,5 @@
-"""WindowFramer1 - generates king studs, header, and sill for each window opening,
-doubling studs that overlap with existing wall studs.
+"""WindowFramer1 - generates king studs, header, sill, and optional vertical header
+for each window opening, doubling studs that overlap with existing wall studs.
 
 GHPython component (Rhino 7 / GhPython)
 Inputs:
@@ -7,10 +7,12 @@ Inputs:
     W  - Tree of window polylines, branches matching P   [Curve, tree access]
     S  - Tree of existing stud polylines on the wall     [Curve, tree access]
     T  - Timber thickness (float)                        [float, item access]
+    V  - Height of vertical header above main header (float, 0 = omit) [float, item access]
 Outputs:
     ST - King studs (doubled where they overlap existing studs)
-    H  - Headers (one per window)
+    H  - Horizontal headers (one per window)
     SL - Sills (one per window)
+    VH - Vertical header above main header (one per window, only when V > 0)
 """
 import Rhino
 import Rhino.Geometry as rg
@@ -140,6 +142,7 @@ def XOverlaps(bb1_minX, bb1_maxX, bb2_minX, bb2_maxX, tol=0.001):
 outST = gh.DataTree[System.Object]()
 outH  = gh.DataTree[System.Object]()
 outSL = gh.DataTree[System.Object]()
+outVH = gh.DataTree[System.Object]()
 
 for b in range(P.BranchCount):
     path  = P.Paths[b]
@@ -213,6 +216,11 @@ for b in range(P.BranchCount):
             ClipAdd(Rect(wx0, wy1, wx1, wy1 + T),
                     wb, lp, outH, path)
 
+            # Vertical header above main header (spanning full king stud width)
+            if V and V > 0:
+                ClipAdd(Rect(wx0 - T, wy1 + T, wx1 + T, wy1 + T + V),
+                        wb, lp, outVH, path)
+
             # Sill (below window, spanning between stud inner faces)
             ClipAdd(Rect(wx0, wy0 - T, wx1, wy0),
                     wb, lp, outSL, path)
@@ -223,3 +231,4 @@ for b in range(P.BranchCount):
 ST = outST
 H  = outH
 SL = outSL
+VH = outVH
