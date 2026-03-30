@@ -59,6 +59,33 @@ def Rect(x0, y0, x1, y1):
     return pl.ToNurbsCurve()
 
 
+def EdgeRectV(ax, ay, bx, by, dy_offset):
+    """Create a parallelogram along edge AB, offset vertically by dy_offset.
+    Bottom follows the edge slope; top is the same edge shifted straight up/down."""
+    pl = rg.Polyline([
+        rg.Point3d(ax, ay,             0),
+        rg.Point3d(bx, by,             0),
+        rg.Point3d(bx, by + dy_offset, 0),
+        rg.Point3d(ax, ay + dy_offset, 0),
+        rg.Point3d(ax, ay,             0)])
+    return pl.ToNurbsCurve()
+
+
+def VhRect(ax, ay, bx, by, x0, x1, t_vert, v_height):
+    """VH spanning x0 to x1, bottom follows the line (ax,ay)-(bx,by) shifted
+    up by t_vert, top is v_height above that. Works for any edge slope."""
+    slope = (by - ay) / (bx - ax) if abs(bx - ax) > 0.001 else 0
+    y0 = ay + slope * (x0 - ax) + t_vert
+    y1 = ay + slope * (x1 - ax) + t_vert
+    pl = rg.Polyline([
+        rg.Point3d(x0, y0,            0),
+        rg.Point3d(x1, y1,            0),
+        rg.Point3d(x1, y1 + v_height, 0),
+        rg.Point3d(x0, y0 + v_height, 0),
+        rg.Point3d(x0, y0,            0)])
+    return pl.ToNurbsCurve()
+
+
 def ClipAdd(crv, boundary, localPlane, tree, path):
     """Boolean-intersect crv with boundary, map back to 3D, add to tree."""
     clipped = rg.Curve.CreateBooleanIntersection(crv, boundary, 0.001)
@@ -94,8 +121,9 @@ def WallTo2D(poly):
     return p2, p2.ToNurbsCurve(), lp
 
 
-def WindowBBox2D(win, localPlane):
-    """Remap a window curve into the local 2D plane and return its bounding box."""
+def WindowPoly2D(win, localPlane):
+    """Remap a window curve into the local 2D plane.
+    Returns (polyline, boundingBox). Polyline is CCW-oriented and closed."""
     ok, wp = win.TryGetPolyline()
     pts = rg.Polyline()
     if ok:
@@ -110,7 +138,16 @@ def WindowBBox2D(win, localPlane):
                 ok2, q = localPlane.RemapToPlaneSpace(win.PointAt(t))
                 q.Z = 0
                 pts.Add(q)
-    return pts.BoundingBox
+
+    # Ensure closed
+    if pts.Count > 1 and pts[0].DistanceTo(pts[pts.Count - 1]) > 0.001:
+        pts.Add(pts[0])
+
+    # Ensure CCW so outward normals point away from interior
+    if pts.Count >= 4 and not IsCCW(pts):
+        pts.Reverse()
+
+    return pts, pts.BoundingBox
 
 
 def StudBBox2D(stud, localPlane):
@@ -144,6 +181,10 @@ outH  = gh.DataTree[System.Object]()
 outSL = gh.DataTree[System.Object]()
 outVH = gh.DataTree[System.Object]()
 
+# Edges whose outward normal Y is below this threshold are treated as
+# vertical sides (handled by king studs) and skipped for header/sill.
+VERT_THRESH = 0.1
+
 for b in range(P.BranchCount):
     path  = P.Paths[b]
     walls = P.Branches[b]
@@ -176,7 +217,7 @@ for b in range(P.BranchCount):
             if win is None:
                 continue
 
-            bb = WindowBBox2D(win, lp)
+            win2D, bb = WindowPoly2D(win, lp)
             if not bb.IsValid:
                 continue
 
@@ -184,46 +225,66 @@ for b in range(P.BranchCount):
             wx1, wy1 = bb.Max.X, bb.Max.Y
             wbb = wb.GetBoundingBox(True)
 
-            # Left king stud (X range: wx0-T to wx0)
+            # -- King studs (positions derived from bounding box) --
+
+            # Left king stud
             leftStudX0 = wx0 - T
             leftStudX1 = wx0
-            ClipAdd(Rect(leftStudX0, wbb.Min.Y - PAD, leftStudX1, wbb.Max.Y + PAD),
-                    wb, lp, outST, path)
+            leftSpace = wx0 - wbb.Min.X
+            if leftSpace >= 2 * T - 0.001:
+                ClipAdd(Rect(leftStudX0, wbb.Min.Y - PAD, leftStudX1, wbb.Max.Y + PAD),
+                        wb, lp, outST, path)
+                for sbb in existingStudBBs:
+                    if XOverlaps(leftStudX0, leftStudX1, sbb.Min.X, sbb.Max.X):
+                        ClipAdd(Rect(leftStudX0 - T, wbb.Min.Y - PAD, leftStudX0, wbb.Max.Y + PAD),
+                                wb, lp, outST, path)
+                        break
 
-            # Check if left king stud overlaps any existing stud
-            for sbb in existingStudBBs:
-                if XOverlaps(leftStudX0, leftStudX1, sbb.Min.X, sbb.Max.X):
-                    # Add double stud on the side away from window (further left)
-                    ClipAdd(Rect(leftStudX0 - T, wbb.Min.Y - PAD, leftStudX0, wbb.Max.Y + PAD),
-                            wb, lp, outST, path)
-                    break
-
-            # Right king stud (X range: wx1 to wx1+T)
+            # Right king stud
             rightStudX0 = wx1
             rightStudX1 = wx1 + T
-            ClipAdd(Rect(rightStudX0, wbb.Min.Y - PAD, rightStudX1, wbb.Max.Y + PAD),
-                    wb, lp, outST, path)
+            rightSpace = wbb.Max.X - wx1
+            if rightSpace >= 2 * T - 0.001:
+                ClipAdd(Rect(rightStudX0, wbb.Min.Y - PAD, rightStudX1, wbb.Max.Y + PAD),
+                        wb, lp, outST, path)
+                for sbb in existingStudBBs:
+                    if XOverlaps(rightStudX0, rightStudX1, sbb.Min.X, sbb.Max.X):
+                        ClipAdd(Rect(rightStudX1, wbb.Min.Y - PAD, rightStudX1 + T, wbb.Max.Y + PAD),
+                                wb, lp, outST, path)
+                        break
 
-            # Check if right king stud overlaps any existing stud
-            for sbb in existingStudBBs:
-                if XOverlaps(rightStudX0, rightStudX1, sbb.Min.X, sbb.Max.X):
-                    # Add double stud on the side away from window (further right)
-                    ClipAdd(Rect(rightStudX1, wbb.Min.Y - PAD, rightStudX1 + T, wbb.Max.Y + PAD),
-                            wb, lp, outST, path)
-                    break
+            # -- Headers and sills from actual window edges --
+            # For each edge, compute the outward normal (CCW polygon: right-hand perp).
+            # ny > VERT_THRESH  -> top/sloped edge -> header
+            # ny < -VERT_THRESH -> bottom edge     -> sill
+            # |ny| <= VERT_THRESH -> nearly vertical -> skip (king stud handles it)
 
-            # Header (above window, spanning between stud inner faces)
-            ClipAdd(Rect(wx0, wy1, wx1, wy1 + T),
-                    wb, lp, outH, path)
+            for i in range(win2D.Count - 1):
+                ax, ay = win2D[i].X, win2D[i].Y
+                bx, by = win2D[i + 1].X, win2D[i + 1].Y
+                edx = bx - ax
+                edy = by - ay
+                elen = (edx*edx + edy*edy) ** 0.5
+                if elen < 0.001:
+                    continue
+                # Outward normal for CCW polygon
+                nx =  edy / elen
+                ny = -edx / elen
 
-            # Vertical header above main header (spanning full king stud width)
-            if V and V > 0:
-                ClipAdd(Rect(wx0 - T, wy1 + T, wx1 + T, wy1 + T + V),
-                        wb, lp, outVH, path)
+                if abs(ny) <= VERT_THRESH:
+                    continue  # vertical side - skip
 
-            # Sill (below window, spanning between stud inner faces)
-            ClipAdd(Rect(wx0, wy0 - T, wx1, wy0),
-                    wb, lp, outSL, path)
+                if ny > 0:
+                    # Header: same slope as window edge, shifted up by T
+                    ClipAdd(EdgeRectV(ax, ay, bx, by, T), wb, lp, outH, path)
+                    # VH spans outer faces of king studs (wx0-T to wx1+T),
+                    # bottom follows header top slope, top is V above that
+                    if V and V > 0:
+                        ClipAdd(VhRect(ax, ay, bx, by, wx0 - T, wx1 + T, T, V),
+                                wb, lp, outVH, path)
+                else:
+                    # Sill: same slope as window edge, shifted down by T
+                    ClipAdd(EdgeRectV(ax, ay, bx, by, -T), wb, lp, outSL, path)
 
 
 # -- Outputs ---------------------------------------------------

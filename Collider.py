@@ -92,8 +92,8 @@ def Rect(x0, y0, x1, y1):
     return pl.ToNurbsCurve()
 
 
-def OpeningBBox2D(crv, localPlane):
-    """Remap an opening curve into the local 2D plane and return its bounding box."""
+def OpeningPoly2D(crv, localPlane):
+    """Remap an opening curve into the local 2D plane and return it as a closed 2D curve."""
     ok, wp = crv.TryGetPolyline()
     pts = rg.Polyline()
     if ok:
@@ -108,7 +108,9 @@ def OpeningBBox2D(crv, localPlane):
                 ok2, q = localPlane.RemapToPlaneSpace(crv.PointAt(t))
                 q.Z = 0
                 pts.Add(q)
-    return pts.BoundingBox
+    if pts.Count > 1 and pts[0].DistanceTo(pts[pts.Count - 1]) > TOL:
+        pts.Add(pts[0])
+    return pts.ToNurbsCurve()
 
 
 def WallTo2D(poly):
@@ -259,18 +261,18 @@ for b in range(P.BranchCount):
         if poly2D is None:
             continue
 
-        # ---- Build opening rectangles in 2D ----
+        # ---- Build opening polygons in 2D ----
         openings_2d = []
         for win in wins:
             if win is None: continue
-            bb = OpeningBBox2D(win, lp)
-            if bb.IsValid:
-                openings_2d.append(Rect(bb.Min.X, bb.Min.Y, bb.Max.X, bb.Max.Y))
+            c2d = OpeningPoly2D(win, lp)
+            if c2d is not None:
+                openings_2d.append(c2d)
         for door in doors:
             if door is None: continue
-            bb = OpeningBBox2D(door, lp)
-            if bb.IsValid:
-                openings_2d.append(Rect(bb.Min.X, bb.Min.Y, bb.Max.X, bb.Max.Y))
+            c2d = OpeningPoly2D(door, lp)
+            if c2d is not None:
+                openings_2d.append(c2d)
 
         # ---- Remap framing to 2D (filtered by wall plane) ----
         wks_2d = Remap2DList(wKings, lp)
