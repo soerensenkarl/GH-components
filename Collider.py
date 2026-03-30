@@ -318,13 +318,30 @@ for b in range(P.BranchCount):
                 outF.Add(mapped, fPathWS)
 
         # ---- Trim each framing category against plates ----
-        TrimAndEmit(wks_2d,                   pl_2d, lp, path, outF, 1, outWKS)
-        TrimAndEmit(dks_2d,                   pl_2d, lp, path, outF, 2, outDKS)
-        TrimAndEmit(wh_2d,                    pl_2d, lp, path, outF, 3, outWH)
-        TrimAndEmit(dh_2d,                    pl_2d, lp, path, outF, 4, outDH)
-        TrimAndEmit(sl_2d,                    pl_2d, lp, path, outF, 5, outSL)
-        TrimAndEmit(Remap2DList(vHeads,  lp), pl_2d, lp, path, outF, 8, outVH)
-        TrimAndEmit(Remap2DList(dvHeads, lp), pl_2d, lp, path, outF, 9, outDVH)
+        TrimAndEmit(wks_2d, pl_2d, lp, path, outF, 1, outWKS)
+        TrimAndEmit(dks_2d, pl_2d, lp, path, outF, 2, outDKS)
+        TrimAndEmit(wh_2d,  pl_2d, lp, path, outF, 3, outWH)
+        TrimAndEmit(dh_2d,  pl_2d, lp, path, outF, 4, outDH)
+        TrimAndEmit(sl_2d,  pl_2d, lp, path, outF, 5, outSL)
+
+        # ---- VH / DVH: subtract top plates directly in 3D ----
+        # Skips the 2D round-trip to avoid plane-remapping filtering issues.
+        # VH and top plates are coplanar so 3D boolean difference works.
+        tp_3d    = [c for c in tPlates if c is not None]
+        fPathVH  = path.AppendElement(8)
+        fPathDVH = path.AppendElement(9)
+        for vh_crv in vHeads:
+            if vh_crv is None: continue
+            pieces = FilterSlivers(SubtractObstacles([vh_crv], tp_3d))
+            for p in pieces:
+                outVH.Add(p, path)
+                outF.Add(p, fPathVH)
+        for dvh_crv in dvHeads:
+            if dvh_crv is None: continue
+            pieces = FilterSlivers(SubtractObstacles([dvh_crv], tp_3d))
+            for p in pieces:
+                outDVH.Add(p, path)
+                outF.Add(p, fPathDVH)
 
         # ---- Pass through plates ----
         fPathTP = path.AppendElement(6)
