@@ -185,30 +185,36 @@ for b in range(P.BranchCount):
             # Left king stud (X range: dx0-T to dx0)
             leftStudX0 = dx0 - T
             leftStudX1 = dx0
-            ClipAdd(Rect(leftStudX0, wbb.Min.Y - PAD, leftStudX1, wbb.Max.Y + PAD),
-                    wb, lp, outST, path)
-
-            # Check if left king stud overlaps any existing stud
-            for sbb in existingStudBBs:
-                if XOverlaps(leftStudX0, leftStudX1, sbb.Min.X, sbb.Max.X):
-                    # Add double stud on the side away from door (further left)
-                    ClipAdd(Rect(leftStudX0 - T, wbb.Min.Y - PAD, leftStudX0, wbb.Max.Y + PAD),
+            leftSpace = dx0 - wbb.Min.X
+            if leftSpace >= T - 0.001:
+                # Only add king stud if there's enough room between wall edge and door
+                # (if space < 2T, the wall-edge stud already serves as king stud)
+                if leftSpace >= 2 * T - 0.001:
+                    ClipAdd(Rect(leftStudX0, wbb.Min.Y - PAD, leftStudX1, wbb.Max.Y + PAD),
                             wb, lp, outST, path)
-                    break
+                    # Check if left king stud overlaps any existing stud
+                    for sbb in existingStudBBs:
+                        if XOverlaps(leftStudX0, leftStudX1, sbb.Min.X, sbb.Max.X):
+                            # Add double stud on the side away from door (further left)
+                            ClipAdd(Rect(leftStudX0 - T, wbb.Min.Y - PAD, leftStudX0, wbb.Max.Y + PAD),
+                                    wb, lp, outST, path)
+                            break
 
             # Right king stud (X range: dx1 to dx1+T)
             rightStudX0 = dx1
             rightStudX1 = dx1 + T
-            ClipAdd(Rect(rightStudX0, wbb.Min.Y - PAD, rightStudX1, wbb.Max.Y + PAD),
-                    wb, lp, outST, path)
-
-            # Check if right king stud overlaps any existing stud
-            for sbb in existingStudBBs:
-                if XOverlaps(rightStudX0, rightStudX1, sbb.Min.X, sbb.Max.X):
-                    # Add double stud on the side away from door (further right)
-                    ClipAdd(Rect(rightStudX1, wbb.Min.Y - PAD, rightStudX1 + T, wbb.Max.Y + PAD),
+            rightSpace = wbb.Max.X - dx1
+            if rightSpace >= T - 0.001:
+                if rightSpace >= 2 * T - 0.001:
+                    ClipAdd(Rect(rightStudX0, wbb.Min.Y - PAD, rightStudX1, wbb.Max.Y + PAD),
                             wb, lp, outST, path)
-                    break
+                    # Check if right king stud overlaps any existing stud
+                    for sbb in existingStudBBs:
+                        if XOverlaps(rightStudX0, rightStudX1, sbb.Min.X, sbb.Max.X):
+                            # Add double stud on the side away from door (further right)
+                            ClipAdd(Rect(rightStudX1, wbb.Min.Y - PAD, rightStudX1 + T, wbb.Max.Y + PAD),
+                                    wb, lp, outST, path)
+                            break
 
             # Header (above door, spanning between stud inner faces)
             ClipAdd(Rect(dx0, dy1, dx1, dy1 + T),
