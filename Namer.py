@@ -1,10 +1,10 @@
-"""Namer - assigns a unique name to every framing element.
+"""Namer - assigns a unique name to every framing element across all typologies.
 
 GHPython component (Rhino 7 / GhPython)
 Inputs:
     F   - Full frame tree (paths {A;B;C})                [Item, tree access]
-            A = typology (0=wall, 1=roof, ...)
-            B = component (individual wall/roof surface)
+            A = typology (0=wall, 1=roof, 2=floor, 3=gluelam)
+            B = component (individual wall/roof/floor/beam)
             C = subcomponent category
     K   - Kit prefix string (default "kit")              [str, item access]
 Outputs:
@@ -24,6 +24,7 @@ import System.Drawing
 #    5=window sills                                         -> bk (bundkarm)
 #    6=top plates                                           -> tr (toprem)
 #    7=bottom plates                                        -> br (bundrem)
+#    8=window vertical headers, 9=door vertical headers    -> vh (vertikaloverligger)
 WALL_TYPE_MAP = {
     0: "lp",
     1: "lp",
@@ -33,6 +34,8 @@ WALL_TYPE_MAP = {
     5: "bk",
     6: "tr",
     7: "br",
+    8: "vh",
+    9: "vh",
 }
 
 WALL_LAYER_MAP = {
@@ -44,6 +47,8 @@ WALL_LAYER_MAP = {
     5: "HUS::Bundkarm",
     6: "HUS::Toprem",
     7: "HUS::Bundrem",
+    8: "HUS::Vertikaloverligger_Vindue",
+    9: "HUS::Vertikaloverligger_Doer",
 }
 
 WALL_COLOR_MAP = {
@@ -55,6 +60,8 @@ WALL_COLOR_MAP = {
     5: System.Drawing.Color.FromArgb(0, 188, 212),    # Bundkarm - cyan
     6: System.Drawing.Color.FromArgb(255, 214, 0),    # Toprem - yellow
     7: System.Drawing.Color.FromArgb(121, 85, 72),    # Bundrem - brown
+    8: System.Drawing.Color.FromArgb(240, 98, 146),   # Vertikaloverligger Vindue - pink
+    9: System.Drawing.Color.FromArgb(255, 64, 129),   # Vertikaloverligger Doer - deep pink
 }
 
 # ==========================================
@@ -88,12 +95,28 @@ FLOOR_COLOR_MAP = {
 }
 
 # ==========================================
+# GLUELAM subcomponent maps (A=3, keyed by C)
+# ==========================================
+GLUELAM_TYPE_MAP = {
+    0: "lt",  # limtrae (gluelam beam)
+}
+
+GLUELAM_LAYER_MAP = {
+    0: "HUS::Limtrae",
+}
+
+GLUELAM_COLOR_MAP = {
+    0: System.Drawing.Color.FromArgb(160, 82, 45),    # Limtrae - sienna brown
+}
+
+# ==========================================
 # Typology dispatch: A index -> maps
 # ==========================================
 TYPOLOGY = {
     0: (WALL_TYPE_MAP, WALL_LAYER_MAP, WALL_COLOR_MAP),
     1: (ROOF_TYPE_MAP, ROOF_LAYER_MAP, ROOF_COLOR_MAP),
     2: (FLOOR_TYPE_MAP, FLOOR_LAYER_MAP, FLOOR_COLOR_MAP),
+    3: (GLUELAM_TYPE_MAP, GLUELAM_LAYER_MAP, GLUELAM_COLOR_MAP),
 }
 
 prefix = K if K else "kit"
@@ -125,9 +148,16 @@ for i in range(F.BranchCount):
         color = System.Drawing.Color.Gray
 
     for j in range(branch.Count):
-        key = (idx_A, idx_B, abbr)
-        counters[key] = counters.get(key, 0) + 1
-        name = "{}_{}_{}_{}".format(prefix, idx_B, abbr, counters[key])
+        if idx_A == 0:
+            # Walls: kit naming - counter resets per wall component (B)
+            key = (idx_A, idx_B, abbr)
+            counters[key] = counters.get(key, 0) + 1
+            name = "{}_{}_{}_{}".format(prefix, idx_B, abbr, counters[key])
+        else:
+            # Roof, floor, gluelam: sequential across the entire typology
+            key = (idx_A, abbr)
+            counters[key] = counters.get(key, 0) + 1
+            name = "{}_{}".format(abbr, counters[key])
         outN.Add(name, bPath)
         outL.Add(layer, bPath)
         outC.Add(color, bPath)

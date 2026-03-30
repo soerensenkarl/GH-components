@@ -1,8 +1,9 @@
-"""Previewer - custom preview with color mode selection.
+"""Previewer - custom preview with color mode selection for all typologies.
 
 GHPython component (Rhino 7 / GhPython)
 Inputs:
     F   - Full frame tree (paths {A;B;C})              [Item, tree access]
+            A = typology (0=wall, 1=roof, 2=floor, 3=gluelam)
     M   - Color mode                                   [int, item access]
             0 = by typology (A)
             1 = by component (B)
@@ -29,6 +30,8 @@ WALL_COLOR_MAP = {
     5: System.Drawing.Color.FromArgb(0, 188, 212),    # Bundkarm - cyan
     6: System.Drawing.Color.FromArgb(255, 214, 0),    # Toprem - yellow
     7: System.Drawing.Color.FromArgb(121, 85, 72),    # Bundrem - brown
+    8: System.Drawing.Color.FromArgb(240, 98, 146),   # Vertikaloverligger Vindue - pink
+    9: System.Drawing.Color.FromArgb(255, 64, 129),   # Vertikaloverligger Doer - deep pink
 }
 
 ROOF_COLOR_MAP = {
@@ -39,10 +42,15 @@ FLOOR_COLOR_MAP = {
     0: System.Drawing.Color.FromArgb(244, 164, 96),   # Gulvbjaelke - sandy wood
 }
 
+GLUELAM_COLOR_MAP = {
+    0: System.Drawing.Color.FromArgb(160, 82, 45),    # Limtrae - sienna brown
+}
+
 SUBCOMP_COLORS = {
     0: WALL_COLOR_MAP,
     1: ROOF_COLOR_MAP,
     2: FLOOR_COLOR_MAP,
+    3: GLUELAM_COLOR_MAP,
 }
 
 # ==========================================
@@ -52,6 +60,7 @@ TYPO_COLOR_MAP = {
     0: System.Drawing.Color.FromArgb(66, 133, 244),   # Walls - blue
     1: System.Drawing.Color.FromArgb(76, 175, 80),    # Roof - green
     2: System.Drawing.Color.FromArgb(244, 164, 96),   # Floor - sandy wood
+    3: System.Drawing.Color.FromArgb(160, 82, 45),    # Gluelam - sienna brown
 }
 
 # ==========================================
