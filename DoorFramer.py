@@ -6,7 +6,7 @@ Inputs:
     P  - Tree of closed planar wall boundary polylines  [Curve, tree access]
     D  - Tree of door polylines, branches matching P     [Curve, tree access]
     S  - Tree of existing stud polylines on the wall     [Curve, tree access]
-    T  - Wall thickness (float) - used as vertical header height [float, item access]
+    T  - Wall thickness per wall branch                          [float, tree access]
 Outputs:
     ST - King studs (doubled where they overlap existing studs)
     H  - Horizontal headers (one per door)
@@ -144,10 +144,12 @@ outH  = gh.DataTree[System.Object]()
 outVH = gh.DataTree[System.Object]()
 
 for b in range(P.BranchCount):
-    path  = P.Paths[b]
-    walls = P.Branches[b]
-    doors = D.Branches[b] if b < D.BranchCount else []
-    studs = S.Branches[b] if b < S.BranchCount else []
+    path     = P.Paths[b]
+    walls    = P.Branches[b]
+    doors    = D.Branches[b] if b < D.BranchCount else []
+    studs    = S.Branches[b] if b < S.BranchCount else []
+    t_branch = T.Branches[b] if b < T.BranchCount and T.Branches[b] else None
+    wall_t   = t_branch[0] if t_branch else 120
 
     for wall in walls:
         if wall is None or not wall.IsClosed:
@@ -221,8 +223,8 @@ for b in range(P.BranchCount):
             ClipAdd(Rect(dx0, dy1, dx1, dy1 + TIM),
                     wb, lp, outH, path)
 
-            # Vertical header above main header, height = wall thickness (T)
-            ClipAdd(Rect(dx0 - TIM, dy1 + TIM, dx1 + TIM, dy1 + TIM + T),
+            # Vertical header above main header, height = wall thickness
+            ClipAdd(Rect(dx0 - TIM, dy1 + TIM, dx1 + TIM, dy1 + TIM + wall_t),
                     wb, lp, outVH, path)
 
 
