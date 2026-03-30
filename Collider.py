@@ -249,6 +249,8 @@ for b in range(P.BranchCount):
     wHeads  = GetBranch(WH,  b)
     dHeads  = GetBranch(DH,  b)
     sills   = GetBranch(SL,  b)
+    vHeads  = GetBranch(VH,  b)
+    dvHeads = GetBranch(DVH, b)
 
     for wall in walls:
         if wall is None or not wall.IsClosed:
@@ -316,11 +318,13 @@ for b in range(P.BranchCount):
                 outF.Add(mapped, fPathWS)
 
         # ---- Trim each framing category against plates ----
-        TrimAndEmit(wks_2d, pl_2d, lp, path, outF, 1, outWKS)
-        TrimAndEmit(dks_2d, pl_2d, lp, path, outF, 2, outDKS)
-        TrimAndEmit(wh_2d,  pl_2d, lp, path, outF, 3, outWH)
-        TrimAndEmit(dh_2d,  pl_2d, lp, path, outF, 4, outDH)
-        TrimAndEmit(sl_2d,  pl_2d, lp, path, outF, 5, outSL)
+        TrimAndEmit(wks_2d,                   pl_2d, lp, path, outF, 1, outWKS)
+        TrimAndEmit(dks_2d,                   pl_2d, lp, path, outF, 2, outDKS)
+        TrimAndEmit(wh_2d,                    pl_2d, lp, path, outF, 3, outWH)
+        TrimAndEmit(dh_2d,                    pl_2d, lp, path, outF, 4, outDH)
+        TrimAndEmit(sl_2d,                    pl_2d, lp, path, outF, 5, outSL)
+        TrimAndEmit(Remap2DList(vHeads,  lp), pl_2d, lp, path, outF, 8, outVH)
+        TrimAndEmit(Remap2DList(dvHeads, lp), pl_2d, lp, path, outF, 9, outDVH)
 
         # ---- Pass through plates ----
         fPathTP = path.AppendElement(6)
@@ -337,25 +341,6 @@ for b in range(P.BranchCount):
             if c2d is not None:
                 outBP.Add(c, path)
                 outF.Add(c, fPathBP)
-
-
-# -- Pass through VH / DVH on their original input paths ------
-
-if VH is not None:
-    for i in range(VH.BranchCount):
-        vpath = VH.Paths[i]
-        for c in VH.Branches[i]:
-            if c is None: continue
-            outVH.Add(c, vpath)
-            outF.Add(c, vpath.AppendElement(8))
-
-if DVH is not None:
-    for i in range(DVH.BranchCount):
-        dvpath = DVH.Paths[i]
-        for c in DVH.Branches[i]:
-            if c is None: continue
-            outDVH.Add(c, dvpath)
-            outF.Add(c, dvpath.AppendElement(9))
 
 
 # -- Outputs ---------------------------------------------------
