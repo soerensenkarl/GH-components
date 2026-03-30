@@ -1,4 +1,4 @@
-"""WindowFramer1 - generates king studs, header, sill, and optional vertical header
+"""WindowFramer1 - generates king studs, header, sill, and vertical header
 for each window opening, doubling studs that overlap with existing wall studs.
 
 GHPython component (Rhino 7 / GhPython)
@@ -6,13 +6,12 @@ Inputs:
     P  - Tree of closed planar wall boundary polylines  [Curve, tree access]
     W  - Tree of window polylines, branches matching P   [Curve, tree access]
     S  - Tree of existing stud polylines on the wall     [Curve, tree access]
-    T  - Timber thickness (float)                        [float, item access]
-    V  - Height of vertical header above main header (float, 0 = omit) [float, item access]
+    T  - Wall thickness (float) - used as vertical header height [float, item access]
 Outputs:
     ST - King studs (doubled where they overlap existing studs)
     H  - Horizontal headers (one per window)
     SL - Sills (one per window)
-    VH - Vertical header above main header (one per window, only when V > 0)
+    VH - Vertical header above main header (one per window)
 """
 import Rhino
 import Rhino.Geometry as rg
@@ -176,6 +175,8 @@ def XOverlaps(bb1_minX, bb1_maxX, bb2_minX, bb2_maxX, tol=0.001):
 
 # -- Main ------------------------------------------------------
 
+TIM = 45  # timber thickness (mm) - always 45
+
 outST = gh.DataTree[System.Object]()
 outH  = gh.DataTree[System.Object]()
 outSL = gh.DataTree[System.Object]()
@@ -228,28 +229,28 @@ for b in range(P.BranchCount):
             # -- King studs (positions derived from bounding box) --
 
             # Left king stud
-            leftStudX0 = wx0 - T
+            leftStudX0 = wx0 - TIM
             leftStudX1 = wx0
             leftSpace = wx0 - wbb.Min.X
-            if leftSpace >= 2 * T - 0.001:
+            if leftSpace >= 2 * TIM - 0.001:
                 ClipAdd(Rect(leftStudX0, wbb.Min.Y - PAD, leftStudX1, wbb.Max.Y + PAD),
                         wb, lp, outST, path)
                 for sbb in existingStudBBs:
                     if XOverlaps(leftStudX0, leftStudX1, sbb.Min.X, sbb.Max.X):
-                        ClipAdd(Rect(leftStudX0 - T, wbb.Min.Y - PAD, leftStudX0, wbb.Max.Y + PAD),
+                        ClipAdd(Rect(leftStudX0 - TIM, wbb.Min.Y - PAD, leftStudX0, wbb.Max.Y + PAD),
                                 wb, lp, outST, path)
                         break
 
             # Right king stud
             rightStudX0 = wx1
-            rightStudX1 = wx1 + T
+            rightStudX1 = wx1 + TIM
             rightSpace = wbb.Max.X - wx1
-            if rightSpace >= 2 * T - 0.001:
+            if rightSpace >= 2 * TIM - 0.001:
                 ClipAdd(Rect(rightStudX0, wbb.Min.Y - PAD, rightStudX1, wbb.Max.Y + PAD),
                         wb, lp, outST, path)
                 for sbb in existingStudBBs:
                     if XOverlaps(rightStudX0, rightStudX1, sbb.Min.X, sbb.Max.X):
-                        ClipAdd(Rect(rightStudX1, wbb.Min.Y - PAD, rightStudX1 + T, wbb.Max.Y + PAD),
+                        ClipAdd(Rect(rightStudX1, wbb.Min.Y - PAD, rightStudX1 + TIM, wbb.Max.Y + PAD),
                                 wb, lp, outST, path)
                         break
 
@@ -275,16 +276,14 @@ for b in range(P.BranchCount):
                     continue  # vertical side - skip
 
                 if ny > 0:
-                    # Header: same slope as window edge, shifted up by T
-                    ClipAdd(EdgeRectV(ax, ay, bx, by, T), wb, lp, outH, path)
-                    # VH spans outer faces of king studs (wx0-T to wx1+T),
-                    # bottom follows header top slope, top is V above that
-                    if V and V > 0:
-                        ClipAdd(VhRect(ax, ay, bx, by, wx0 - T, wx1 + T, T, V),
-                                wb, lp, outVH, path)
+                    # Header: same slope as window edge, shifted up by TIM
+                    ClipAdd(EdgeRectV(ax, ay, bx, by, TIM), wb, lp, outH, path)
+                    # VH spans outer faces of king studs, height = wall thickness (T)
+                    ClipAdd(VhRect(ax, ay, bx, by, wx0 - TIM, wx1 + TIM, TIM, T),
+                            wb, lp, outVH, path)
                 else:
-                    # Sill: same slope as window edge, shifted down by T
-                    ClipAdd(EdgeRectV(ax, ay, bx, by, -T), wb, lp, outSL, path)
+                    # Sill: same slope as window edge, shifted down by TIM
+                    ClipAdd(EdgeRectV(ax, ay, bx, by, -TIM), wb, lp, outSL, path)
 
 
 # -- Outputs ---------------------------------------------------

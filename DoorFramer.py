@@ -1,4 +1,4 @@
-"""DoorFramer1 - generates king studs, header, and optional vertical header
+"""DoorFramer1 - generates king studs, header, and vertical header
 for each door opening, doubling studs that overlap with existing wall studs.
 
 GHPython component (Rhino 7 / GhPython)
@@ -6,12 +6,11 @@ Inputs:
     P  - Tree of closed planar wall boundary polylines  [Curve, tree access]
     D  - Tree of door polylines, branches matching P     [Curve, tree access]
     S  - Tree of existing stud polylines on the wall     [Curve, tree access]
-    T  - Timber thickness (float)                        [float, item access]
-    V  - Height of vertical header above main header (float, 0 = omit) [float, item access]
+    T  - Wall thickness (float) - used as vertical header height [float, item access]
 Outputs:
     ST - King studs (doubled where they overlap existing studs)
     H  - Horizontal headers (one per door)
-    VH - Vertical header above main header (one per door, only when V > 0)
+    VH - Vertical header above main header (one per door)
 """
 import Rhino
 import Rhino.Geometry as rg
@@ -138,6 +137,8 @@ def XOverlaps(bb1_minX, bb1_maxX, bb2_minX, bb2_maxX, tol=0.001):
 
 # -- Main ------------------------------------------------------
 
+TIM = 45  # timber thickness (mm) - always 45
+
 outST = gh.DataTree[System.Object]()
 outH  = gh.DataTree[System.Object]()
 outVH = gh.DataTree[System.Object]()
@@ -182,48 +183,47 @@ for b in range(P.BranchCount):
             dx1, dy1 = bb.Max.X, bb.Max.Y
             wbb = wb.GetBoundingBox(True)
 
-            # Left king stud (X range: dx0-T to dx0)
-            leftStudX0 = dx0 - T
+            # Left king stud (X range: dx0-TIM to dx0)
+            leftStudX0 = dx0 - TIM
             leftStudX1 = dx0
             leftSpace = dx0 - wbb.Min.X
-            if leftSpace >= T - 0.001:
+            if leftSpace >= TIM - 0.001:
                 # Only add king stud if there's enough room between wall edge and door
-                # (if space < 2T, the wall-edge stud already serves as king stud)
-                if leftSpace >= 2 * T - 0.001:
+                # (if space < 2*TIM, the wall-edge stud already serves as king stud)
+                if leftSpace >= 2 * TIM - 0.001:
                     ClipAdd(Rect(leftStudX0, wbb.Min.Y - PAD, leftStudX1, wbb.Max.Y + PAD),
                             wb, lp, outST, path)
                     # Check if left king stud overlaps any existing stud
                     for sbb in existingStudBBs:
                         if XOverlaps(leftStudX0, leftStudX1, sbb.Min.X, sbb.Max.X):
                             # Add double stud on the side away from door (further left)
-                            ClipAdd(Rect(leftStudX0 - T, wbb.Min.Y - PAD, leftStudX0, wbb.Max.Y + PAD),
+                            ClipAdd(Rect(leftStudX0 - TIM, wbb.Min.Y - PAD, leftStudX0, wbb.Max.Y + PAD),
                                     wb, lp, outST, path)
                             break
 
-            # Right king stud (X range: dx1 to dx1+T)
+            # Right king stud (X range: dx1 to dx1+TIM)
             rightStudX0 = dx1
-            rightStudX1 = dx1 + T
+            rightStudX1 = dx1 + TIM
             rightSpace = wbb.Max.X - dx1
-            if rightSpace >= T - 0.001:
-                if rightSpace >= 2 * T - 0.001:
+            if rightSpace >= TIM - 0.001:
+                if rightSpace >= 2 * TIM - 0.001:
                     ClipAdd(Rect(rightStudX0, wbb.Min.Y - PAD, rightStudX1, wbb.Max.Y + PAD),
                             wb, lp, outST, path)
                     # Check if right king stud overlaps any existing stud
                     for sbb in existingStudBBs:
                         if XOverlaps(rightStudX0, rightStudX1, sbb.Min.X, sbb.Max.X):
                             # Add double stud on the side away from door (further right)
-                            ClipAdd(Rect(rightStudX1, wbb.Min.Y - PAD, rightStudX1 + T, wbb.Max.Y + PAD),
+                            ClipAdd(Rect(rightStudX1, wbb.Min.Y - PAD, rightStudX1 + TIM, wbb.Max.Y + PAD),
                                     wb, lp, outST, path)
                             break
 
             # Header (above door, spanning between stud inner faces)
-            ClipAdd(Rect(dx0, dy1, dx1, dy1 + T),
+            ClipAdd(Rect(dx0, dy1, dx1, dy1 + TIM),
                     wb, lp, outH, path)
 
-            # Vertical header above main header (spanning full king stud width)
-            if V and V > 0:
-                ClipAdd(Rect(dx0 - T, dy1 + T, dx1 + T, dy1 + T + V),
-                        wb, lp, outVH, path)
+            # Vertical header above main header, height = wall thickness (T)
+            ClipAdd(Rect(dx0 - TIM, dy1 + TIM, dx1 + TIM, dy1 + TIM + T),
+                    wb, lp, outVH, path)
 
 
 # -- Outputs ---------------------------------------------------
