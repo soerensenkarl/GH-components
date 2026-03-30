@@ -72,7 +72,7 @@ for bi in range(F.BranchCount):
 
     # Vertical headers use fixed timber thickness regardless of wall thickness
     depth       = VH_THICKNESS if f_type in VH_TYPE_INDICES else thickness
-    extrude_vec = rg.Vector3d(frame.ZAxis) * -depth
+    extrude_vec = rg.Vector3d(frame.ZAxis) * - depth
 
     for crv in curves:
         if crv is None:
