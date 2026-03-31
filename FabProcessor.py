@@ -16,15 +16,36 @@ import math
 
 
 def split_curve_at_length(crv, length):
-    """Split a planar curve at intervals of length along its local X axis.
+    """Split a planar curve at intervals of length along the plate's long axis.
     Returns a list of pieces (original curve if no split needed).
     """
     ok, crv_plane = crv.TryGetPlane()
     if not ok:
         return [crv]
 
-    xform_to_2d = rg.Transform.PlaneToPlane(crv_plane, rg.Plane.WorldXY)
-    xform_to_3d = rg.Transform.PlaneToPlane(rg.Plane.WorldXY, crv_plane)
+    # Find the long axis by picking the longest edge of the polyline.
+    # TryGetPlane returns an arbitrary X axis which may be the short axis,
+    # causing splits measured in X to undercount the actual plate length.
+    long_axis = None
+    ok2, poly = crv.TryGetPolyline()
+    if ok2 and poly.Count >= 2:
+        best_len = -1.0
+        for i in range(poly.Count - 1):
+            v = poly[i + 1] - poly[i]
+            if v.Length > best_len:
+                best_len = v.Length
+                long_axis = v
+    if long_axis is None:
+        long_axis = crv.TangentAt(crv.Domain.Mid)
+    long_axis.Unitize()
+
+    y_axis = rg.Vector3d.CrossProduct(crv_plane.Normal, long_axis)
+    if y_axis.Length < 0.001:
+        return [crv]
+    oriented_plane = rg.Plane(crv_plane.Origin, long_axis, y_axis)
+
+    xform_to_2d = rg.Transform.PlaneToPlane(oriented_plane, rg.Plane.WorldXY)
+    xform_to_3d = rg.Transform.PlaneToPlane(rg.Plane.WorldXY, oriented_plane)
 
     crv_2d = crv.DuplicateCurve()
     crv_2d.Transform(xform_to_2d)
