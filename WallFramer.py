@@ -13,12 +13,12 @@ class Edge:
         self.Tgt = b - a
         self.Tgt.Unitize()
         # CCW Outward Normal
-        self.N = Rhino.Geometry.Vector3d(self.Tgt.Y, -self.Tgt.X, 0) 
-        
+        self.N = Rhino.Geometry.Vector3d(self.Tgt.Y, -self.Tgt.X, 0)
+
         if self.N.Y > 0.01: self.Type = 1
         elif self.N.Y < -0.01: self.Type = -1
         else: self.Type = 0
-            
+
         self.IsHoriz = abs(self.Tgt.Y) < 0.01
 
 class PlateData:
@@ -56,7 +56,7 @@ def get_corner_pt(e1, d1, e2, d2):
     p1 = e1.A - e1.N * d1
     p2 = e2.A - e2.N * d2
     pt = intersect_lines_2d(p1, e1.Tgt, p2, e2.Tgt)
-    if pt is None: return p2 
+    if pt is None: return p2
     return pt
 
 def get_plumb_pt(edge, dist, x_target):
@@ -81,6 +81,7 @@ outStuds = gh.DataTree[System.Object]()
 for b in range(P.BranchCount):
     branch = P.Branches[b]
     branchPath = P.Paths[b]
+    n_branch = N.Branches[b] if (N is not None and b < N.BranchCount) else []
 
     for w in range(branch.Count):
         boundary = branch[w]
@@ -109,21 +110,24 @@ for b in range(P.BranchCount):
         poly2D = CleanCollinear(poly2D)
         wallBoundary = poly2D.ToNurbsCurve()
 
-        N = poly2D.Count - 1
-        edges = [Edge(poly2D[i], poly2D[i+1], T, TC, BC) for i in range(N)]
+        n_edges = poly2D.Count - 1
+        edges = [Edge(poly2D[i], poly2D[i+1], T, TC, BC) for i in range(n_edges)]
         path = branchPath.AppendElement(w)
-    
+
+        wall_name = n_branch[w] if (w < len(n_branch) and n_branch[w] is not None) else ""
+        wall_cc = 300.0 if wall_name == "bath" else CC
+
         rawPlates = []
 
         # ----------------------------------------------------
         # STEP 3a: Generate raw plates (Miter vs Plumb Cut)
         # ----------------------------------------------------
-        for i in range(N):
+        for i in range(n_edges):
             edge = edges[i]
             if edge.Type == 0: continue
 
-            prev_edge = edges[(i - 1) % N]
-            next_edge = edges[(i + 1) % N]
+            prev_edge = edges[(i - 1) % n_edges]
+            next_edge = edges[(i + 1) % n_edges]
 
             miter_prev = (prev_edge.Type == edge.Type)
             miter_next = (next_edge.Type == edge.Type)
@@ -222,11 +226,11 @@ for b in range(P.BranchCount):
             studXs.append(start_x)
 
         # 2. CC Studs
-        current_x = start_x + CC
+        current_x = start_x + wall_cc
         while current_x < end_x:
             if abs(end_x - current_x) >= T - 0.001:
                 studXs.append(current_x)
-            current_x += CC
+            current_x += wall_cc
 
         # 3. End Stud
         if end_x >= start_x + T - 0.001:
@@ -277,4 +281,5 @@ for b in range(P.BranchCount):
 # Assign outputs
 TP = outTop
 BP = outBot
-S = outStuds
+S  = outStuds
+A = outAttrs

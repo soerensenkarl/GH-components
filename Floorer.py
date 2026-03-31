@@ -10,6 +10,7 @@ Inputs:
             1 = flip 90 degrees
 Outputs:
     J   - Joist breps matching input tree structure
+    R   - Rim joist (kantbjaelke) breps matching input tree structure
 """
 import Rhino.Geometry as rg
 import scriptcontext as sc
@@ -22,7 +23,7 @@ if CC is None: CC = 600.0
 
 def generate_joists(brep, t, cc, flip=False):
     if not brep:
-        return []
+        return [], []
 
     tol = sc.doc.ModelAbsoluteTolerance
     bbox = brep.GetBoundingBox(True)
@@ -70,31 +71,54 @@ def generate_joists(brep, t, cc, flip=False):
         centers.append(end_center)
 
     joist_breps = []
+    rim_breps = []
 
-    # Generate the geometry
+    # Main joists
     for c in centers:
         if span_short:
             origin = rg.Point3d(c, bbox.Center.Y, bbox.Center.Z)
         else:
             origin = rg.Point3d(bbox.Center.X, c, bbox.Center.Z)
-
         plane = rg.Plane(origin, axis_vec)
         rc, crvs, pts = rg.Intersect.Intersection.BrepPlane(brep, plane, tol)
-
         if rc and crvs:
             joined = rg.Curve.JoinCurves(crvs, tol)
             for jc in joined:
                 if jc.IsClosed:
-                    move_vec = axis_vec * (-t / 2.0)
-                    jc.Translate(move_vec)
-
+                    jc.Translate(axis_vec * (-t / 2.0))
                     ext_srf = rg.Surface.CreateExtrusion(jc, axis_vec * t)
                     if ext_srf:
                         solid = ext_srf.ToBrep().CapPlanarHoles(tol)
                         if solid:
                             joist_breps.append(solid)
 
-    return joist_breps
+    # Rim joists (kantbjaelke) - perpendicular to main joists, at both ends of span
+    if span_short:
+        rim_vec = rg.Vector3d.YAxis
+        rim_centers = [bbox.Min.Y + t / 2.0, bbox.Max.Y - t / 2.0]
+    else:
+        rim_vec = rg.Vector3d.XAxis
+        rim_centers = [bbox.Min.X + t / 2.0, bbox.Max.X - t / 2.0]
+
+    for c in rim_centers:
+        if span_short:
+            origin = rg.Point3d(bbox.Center.X, c, bbox.Center.Z)
+        else:
+            origin = rg.Point3d(c, bbox.Center.Y, bbox.Center.Z)
+        plane = rg.Plane(origin, rim_vec)
+        rc, crvs, pts = rg.Intersect.Intersection.BrepPlane(brep, plane, tol)
+        if rc and crvs:
+            joined = rg.Curve.JoinCurves(crvs, tol)
+            for jc in joined:
+                if jc.IsClosed:
+                    jc.Translate(rim_vec * (-t / 2.0))
+                    ext_srf = rg.Surface.CreateExtrusion(jc, rim_vec * t)
+                    if ext_srf:
+                        solid = ext_srf.ToBrep().CapPlanarHoles(tol)
+                        if solid:
+                            rim_breps.append(solid)
+
+    return joist_breps, rim_breps
 
 # --- Tree Handling Logic ---
 
@@ -113,5 +137,6 @@ if B:
 
         for brep in branch:
             if brep:
-                joists = generate_joists(brep, T, CC, flip)
+                joists, rims = generate_joists(brep, T, CC, flip)
                 J.AddRange(joists, path)
+                J.AddRange(rims, path)
