@@ -284,8 +284,10 @@ for b in range(P.BranchCount):
                     ClipAdd(VhRect(ax, ay, bx, by, wx0 - TIM, wx1 + TIM, TIM, wall_t),
                             wb, lp, outVH, path)
                 else:
-                    # Sill: same slope as window edge, shifted down by TIM
-                    ClipAdd(EdgeRectV(ax, ay, bx, by, -TIM), wb, lp, outSL, path)
+                    # Sill: only generate if it fits above the wall bottom plate
+                    sill_bottom = min(ay, by) - TIM
+                    if sill_bottom >= wbb.Min.Y - 0.001:
+                        ClipAdd(EdgeRectV(ax, ay, bx, by, -TIM), wb, lp, outSL, path)
 
 
 # -- Outputs ---------------------------------------------------
