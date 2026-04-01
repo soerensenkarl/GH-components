@@ -1,6 +1,7 @@
 import Rhino
 import Grasshopper as gh
 import System
+import math
 
 # ==========================================
 # HELPER CLASSES & FUNCTIONS
@@ -219,18 +220,28 @@ for b in range(P.BranchCount):
         studXs = []
 
         start_x = bbox.Min.X + T / 2.0
-        end_x = bbox.Max.X - T / 2.0
+        end_x   = bbox.Max.X - T / 2.0
+
+        # Grid reference: project global P0 onto wall-local X axis
+        if P0 is not None:
+            ok_p0, p0_local = localPlane.RemapToPlaneSpace(P0)
+            grid_ref = p0_local.X
+        else:
+            grid_ref = start_x
 
         # 1. Start Stud
         if end_x >= start_x:
             studXs.append(start_x)
 
-        # 2. CC Studs
-        current_x = start_x + wall_cc
-        while current_x < end_x:
-            if abs(end_x - current_x) >= T - 0.001:
-                studXs.append(current_x)
-            current_x += wall_cc
+        # 2. Intermediate Studs on global CC grid
+        n = int(math.ceil((start_x + 0.001 - grid_ref) / wall_cc))
+        while True:
+            x = grid_ref + n * wall_cc
+            if x >= end_x - 0.001:
+                break
+            if x > start_x + 0.001:
+                studXs.append(x)
+            n += 1
 
         # 3. End Stud
         if end_x >= start_x + T - 0.001:

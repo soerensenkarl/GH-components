@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh auth:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(ls:*)",
+      "WebSearch",
+      "WebFetch(domain:developer.rhino3d.com)",
+      "WebFetch(domain:www.cademy.xyz)"
+    ]
+  }
+}

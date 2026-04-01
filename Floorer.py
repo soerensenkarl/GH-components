@@ -16,12 +16,13 @@ import Rhino.Geometry as rg
 import scriptcontext as sc
 import Grasshopper as gh
 import System
+import math
 
 # Set default values if inputs are missing
 if T is None: T = 45.0
 if CC is None: CC = 600.0
 
-def generate_joists(brep, t, cc, flip=False):
+def generate_joists(brep, t, cc, flip=False, p0=None):
     if not brep:
         return [], []
 
@@ -47,18 +48,28 @@ def generate_joists(brep, t, cc, flip=False):
 
     centers = []
 
-    # 1. Start Joist
-    centers.append(min_val + t / 2.0)
+    start_center = min_val + t / 2.0
+    end_center   = max_val - t / 2.0
 
-    # 2. Intermediate Joists
-    curr = min_val + cc
-    while curr < max_val - t:
-        if curr > min_val + t:
-            centers.append(curr)
-        curr += cc
+    # Grid reference from global start point, or fall back to local edge
+    if p0 is not None:
+        grid_ref = p0.X if span_short else p0.Y
+    else:
+        grid_ref = start_center
+
+    # 1. Start Joist
+    centers.append(start_center)
+
+    # 2. Intermediate Joists on global CC grid
+    n = int(math.ceil((start_center + 0.001 - grid_ref) / cc))
+    while True:
+        x = grid_ref + n * cc
+        if x >= end_center - 0.001:
+            break
+        centers.append(x)
+        n += 1
 
     # 3. End Joist
-    end_center = max_val - t / 2.0
     if len(centers) > 0:
         gap = end_center - centers[-1]
         if gap > t:
@@ -137,6 +148,6 @@ if B:
 
         for brep in branch:
             if brep:
-                joists, rims = generate_joists(brep, T, CC, flip)
+                joists, rims = generate_joists(brep, T, CC, flip, P0)
                 J.AddRange(joists, path)
                 J.AddRange(rims, path)

@@ -21,6 +21,9 @@ TOL = 0.001
 
 def extrude_solid(crv, vec):
     """Extrude a closed planar curve along vec to produce a capped solid Brep."""
+    crv = crv.DuplicateCurve()
+    crv.Domain = rg.Interval(0, 1)
+    
     srf = rg.Surface.CreateExtrusion(crv, vec)
     if srf is None:
         return None
@@ -38,9 +41,12 @@ def extrude_solid(crv, vec):
     if cap1: pieces.extend(cap1)
 
     joined = rg.Brep.JoinBreps(pieces, TOL)
-    if joined and len(joined) > 0:
-        return joined[0]
-    return side  # fallback: unjoined side surface
+    brep = joined[0] if (joined and len(joined) > 0) else side
+
+    # Split the single wrapped extrusion face at kinks (corners)
+    brep.Faces.SplitKinkyFaces(0.01, True)
+
+    return brep
 
 
 # -- Main ------------------------------------------------------
