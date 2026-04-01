@@ -4,8 +4,10 @@ GHPython component (Rhino 7 / GhPython)
 Inputs:
     F   - Full frame tree from Collider (paths {wall;C})  [Curve, tree access]
             C=6 top plates, C=7 bottom plates are split by L.
+            C=0,1,2 studs and king studs are extended by ND at both ends.
             All other categories pass through unchanged.
     L   - Max timber length for plate splitting           [float, item access]
+    ND  - Notch depth - studs extended by this at top and bottom [float, item access]
 Outputs:
     F   - Processed frame tree matching input structure
 """
@@ -89,29 +91,80 @@ def split_curve_at_length(crv, length):
     return out
 
 
-# C indices that should be split at timber length
-SPLIT_CATEGORIES = {6, 7}  # top plates, bottom plates
+def extend_stud_ends(crv, nd):
+    """Extend a stud curve by nd at both ends (world Z top and bottom)."""
+    nc = crv.ToNurbsCurve()
+    bb = nc.GetBoundingBox(True)
+    z_height = bb.Max.Z - bb.Min.Z
+    z_tol = z_height * 0.05 if z_height > 0 else 1.0
+    for i in range(nc.Points.Count):
+        pt = nc.Points[i].Location
+        if abs(pt.Z - bb.Max.Z) <= z_tol:
+            nc.Points.SetPoint(i, pt.X, pt.Y, pt.Z + nd)
+        elif abs(pt.Z - bb.Min.Z) <= z_tol:
+            nc.Points.SetPoint(i, pt.X, pt.Y, pt.Z - nd)
+    return nc
+
+
+# C indices for each operation
+SPLIT_CATEGORIES    = {6, 7}          # top plates, bottom plates
+EXTEND_CATEGORIES   = {0, 1, 2}       # wall studs, window king studs, door king studs
+HORIZ_CATEGORIES    = {3, 4, 5, 6, 7}  # horizontal members to be notched (excludes VH 8,9)
 
 outF = gh.DataTree[System.Object]()
 
-split_len = L if (L is not None and L > 0) else None
+split_len   = L  if (L  is not None and L  > 0) else None
+notch_depth = ND if (ND is not None and ND > 0) else None
+
+# wall_key = path with last element (C) stripped, used to match studs to plates
+stud_map   = {}  # wall_key -> [extended stud curves]
+plate_items = [] # [(curve, path, wall_key)]
+other_items = [] # [(curve, path)]
 
 for i in range(F.BranchCount):
-    path = F.Paths[i]
+    path   = F.Paths[i]
     branch = F.Branches[i]
-
-    # Last element of path is the C (subcomponent category) index
-    c_idx = path[path.Length - 1]
-    do_split = split_len is not None and c_idx in SPLIT_CATEGORIES
+    c_idx  = path[path.Length - 1]
+    wall_key = tuple(path[j] for j in range(path.Length - 1))
 
     for crv in branch:
         if crv is None:
             continue
-        if do_split:
-            pieces = split_curve_at_length(crv, split_len)
+
+        if notch_depth and c_idx in EXTEND_CATEGORIES:
+            crv = extend_stud_ends(crv, notch_depth)
+            stud_map.setdefault(wall_key, []).append(crv)
+            other_items.append((crv, path))
+        elif c_idx in HORIZ_CATEGORIES:
+            pieces = split_curve_at_length(crv, split_len) if (split_len and c_idx in SPLIT_CATEGORIES) else [crv]
+            for pc in pieces:
+                plate_items.append((pc, path, wall_key))
         else:
-            pieces = [crv]
-        for pc in pieces:
-            outF.Add(pc, path)
+            other_items.append((crv, path))
+
+# Output studs and pass-through items
+for crv, path in other_items:
+    outF.Add(crv, path)
+
+# Output horizontal members - boolean-difference extended studs to form notches
+for plate_crv, path, wall_key in plate_items:
+    studs = stud_map.get(wall_key, []) if notch_depth else []
+    pieces = [plate_crv]
+    for stud in studs:
+        next_pieces = []
+        for piece in pieces:
+            bb_int = rg.BoundingBox.Intersection(
+                piece.GetBoundingBox(True), stud.GetBoundingBox(True))
+            if bb_int.IsValid:
+                diffs = rg.Curve.CreateBooleanDifference(piece, stud, 0.001)
+                if diffs and len(diffs) > 0:
+                    next_pieces.extend(diffs)
+                else:
+                    next_pieces.append(piece)
+            else:
+                next_pieces.append(piece)
+        pieces = next_pieces
+    for pc in pieces:
+        outF.Add(pc, path)
 
 F = outF

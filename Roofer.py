@@ -45,15 +45,15 @@ def generate_rafters(brep, t, cc, flip=False):
         max_val = bbox.Max.Y
         
     centers = []
-    
+
     # 1. Start Rafter
-    centers.append(min_val + t / 2.0)
-    
-    # 2. Intermediate Rafters
-    curr = min_val + cc
+    start_center = min_val + t / 2.0
+    centers.append(start_center)
+
+    # 2. Intermediate Rafters - step from start rafter by CC
+    curr = start_center + cc
     while curr < max_val - t:
-        if curr > min_val + t: 
-            centers.append(curr)
+        centers.append(curr)
         curr += cc
         
     # 3. End Rafter

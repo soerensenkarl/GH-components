@@ -282,4 +282,3 @@ for b in range(P.BranchCount):
 TP = outTop
 BP = outBot
 S  = outStuds
-A = outAttrs
