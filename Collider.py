@@ -16,6 +16,7 @@ Inputs:
     SL  - Window sills (WindowFramer SL output)             [Curve, tree access]
     VH  - Window vertical headers (WindowFramer VH output)  [Curve, tree access]
     DVH - Door vertical headers (DoorFramer VH output)      [Curve, tree access]
+    NO  - Noggings from WallFramer (NO output)              [Curve, tree access]
 Outputs:
     oWS  - Trimmed wall studs (cripple + surviving full studs)
     oWKS - Window king studs (trimmed against plates)
@@ -27,6 +28,7 @@ Outputs:
     oDVH - Door vertical headers (trimmed against plates, does not clip studs)
     oTP  - Top plates (passed through)
     oBP  - Bottom plates (passed through)
+    oNO  - Noggings (trimmed against openings)
     F    - All framing combined (no overlaps)
 """
 import Rhino
@@ -234,6 +236,7 @@ outVH  = gh.DataTree[System.Object]()
 outDVH = gh.DataTree[System.Object]()
 outTP  = gh.DataTree[System.Object]()
 outBP  = gh.DataTree[System.Object]()
+outNO  = gh.DataTree[System.Object]()
 outF   = gh.DataTree[System.Object]()
 
 for b in range(P.BranchCount):
@@ -251,6 +254,7 @@ for b in range(P.BranchCount):
     sills   = GetBranch(SL,  b)
     vHeads  = GetBranch(VH,  b)
     dvHeads = GetBranch(DVH, b)
+    noggings = GetBranch(NO,  b)
 
     for wall in walls:
         if wall is None or not wall.IsClosed:
@@ -324,6 +328,24 @@ for b in range(P.BranchCount):
         TrimAndEmit(dh_2d,  pl_2d, lp, path, outF, 4, outDH)
         TrimAndEmit(sl_2d,  pl_2d, lp, path, outF, 5, outSL)
 
+        # ---- Process noggings ----
+        nog_obstacles = openings_2d + all_ks_2d + all_oh_2d
+        fPathNO = path.AppendElement(10)
+        for nog_crv in noggings:
+            if nog_crv is None: continue
+            nog_2d = To2D(nog_crv, lp)
+            if nog_2d is None: continue
+
+            if nog_obstacles:
+                pieces = FilterSlivers(SubtractObstacles([nog_2d], nog_obstacles))
+            else:
+                pieces = [nog_2d]
+
+            for p in pieces:
+                mapped = MapBack(p, lp)
+                outNO.Add(mapped, path)
+                outF.Add(mapped, fPathNO)
+
         # ---- VH / DVH: subtract top plates directly in 3D ----
         # Skips the 2D round-trip to avoid plane-remapping filtering issues.
         # VH and top plates are coplanar so 3D boolean difference works.
@@ -372,4 +394,5 @@ oVH  = outVH
 oDVH = outDVH
 oTP  = outTP
 oBP  = outBP
+oNO  = outNO
 F    = outF

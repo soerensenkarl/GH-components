@@ -25,6 +25,7 @@ import System.Drawing
 #    6=top plates                                           -> tr (toprem)
 #    7=bottom plates                                        -> br (bundrem)
 #    8=window vertical headers, 9=door vertical headers    -> vh (vertikaloverligger)
+#    10=noggings                                            -> af (afstivning)
 WALL_TYPE_MAP = {
     0: "lp",
     1: "lp",
@@ -36,6 +37,7 @@ WALL_TYPE_MAP = {
     7: "br",
     8: "vh",
     9: "vh",
+    10: "af",
 }
 
 WALL_LAYER_MAP = {
@@ -49,6 +51,7 @@ WALL_LAYER_MAP = {
     7: "HUS::Bundrem",
     8: "HUS::Vertikaloverligger_Vindue",
     9: "HUS::Vertikaloverligger_Doer",
+    10: "HUS::Afstivning",
 }
 
 WALL_COLOR_MAP = {
@@ -62,6 +65,7 @@ WALL_COLOR_MAP = {
     7: System.Drawing.Color.FromArgb(121, 85, 72),    # Bundrem - brown
     8: System.Drawing.Color.FromArgb(240, 98, 146),   # Vertikaloverligger Vindue - pink
     9: System.Drawing.Color.FromArgb(255, 64, 129),   # Vertikaloverligger Doer - deep pink
+    10: System.Drawing.Color.FromArgb(139, 195, 74),   # Afstivning - lime green
 }
 
 # ==========================================

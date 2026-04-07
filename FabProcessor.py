@@ -162,20 +162,24 @@ def subtract_all(pieces, cutters):
 
 # C indices for each operation
 SPLIT_CATEGORIES  = {6, 7}        # top plates, bottom plates
-HORIZ_CATEGORIES  = {3, 4, 5, 6, 7}  # horizontal members (excludes VH 8,9)
-HEADER_CATEGORIES = {3, 4, 5}     # headers and sills - extend into king studs
-KING_CATEGORIES   = {1, 2}        # king studs - get notched by extended headers
+HORIZ_CATEGORIES   = {3, 4, 5, 6, 7}  # horizontal members (excludes VH 8,9)
+HEADER_CATEGORIES  = {3, 4, 5}        # headers and sills - extend into king studs
+KING_CATEGORIES    = {1, 2}           # king studs - get notched by extended headers
+NOGGING_CATEGORIES = {10}             # noggings - extend into studs
+NOGGING_NOTCH      = 5.0              # mm noggings extend into studs
 
 outF = gh.DataTree[System.Object]()
 
 split_len   = L  if (L  is not None and L  > 0) else None
 notch_depth = ND if (ND is not None and ND > 0) else None
 
-stud_map   = {}  # wall_key -> [extended vertical members (C=0,1,2)]
-header_map = {}  # wall_key -> [extended header/sill curves (C=3,4,5)]
-horiz_items = [] # [(curve, path, wall_key)] horizontal members to be notched by studs
-king_items  = [] # [(curve, path, wall_key)] king studs to be notched by headers
-other_items = [] # [(curve, path)] pass-through
+stud_map    = {}  # wall_key -> [extended vertical members (C=0,1,2)]
+header_map  = {}  # wall_key -> [extended header/sill curves (C=3,4,5)]
+nogging_map = {}  # wall_key -> [extended nogging curves (C=10)]
+stud_items  = []  # [(curve, path, wall_key)] wall studs to be notched by noggings
+horiz_items = []  # [(curve, path, wall_key)] horizontal members to be notched by studs
+king_items  = []  # [(curve, path, wall_key)] king studs to be notched by headers+noggings
+other_items = []  # [(curve, path)] pass-through
 
 for i in range(F.BranchCount):
     path     = F.Paths[i]
@@ -187,13 +191,18 @@ for i in range(F.BranchCount):
         if crv is None:
             continue
 
-        if notch_depth and c_idx in {0, 1, 2}:
-            crv = extend_stud_ends(crv, notch_depth)
-            stud_map.setdefault(wall_key, []).append(crv)
+        if c_idx in {0, 1, 2}:
+            if notch_depth:
+                crv = extend_stud_ends(crv, notch_depth)
+                stud_map.setdefault(wall_key, []).append(crv)
             if c_idx in KING_CATEGORIES:
                 king_items.append((crv, path, wall_key))
             else:
-                other_items.append((crv, path))
+                stud_items.append((crv, path, wall_key))
+        elif c_idx in NOGGING_CATEGORIES:
+            crv = extend_header_ends(crv, NOGGING_NOTCH)
+            nogging_map.setdefault(wall_key, []).append(crv)
+            other_items.append((crv, path))
         elif c_idx in HEADER_CATEGORIES:
             if notch_depth:
                 crv = extend_header_ends(crv, notch_depth)
@@ -218,9 +227,26 @@ for crv, path, wall_key in horiz_items:
     for pc in pieces:
         outF.Add(pc, path)
 
-# King studs - notched by extended headers/sills
+# Wall studs - notched by noggings
+for crv, path, wall_key in stud_items:
+    nog_cutters = nogging_map.get(wall_key, [])
+    if nog_cutters:
+        pieces = subtract_all([crv], nog_cutters)
+    else:
+        pieces = [crv]
+    for pc in pieces:
+        outF.Add(pc, path)
+
+# King studs - notched by extended headers/sills and noggings
 for crv, path, wall_key in king_items:
-    pieces = subtract_all([crv], header_map.get(wall_key, []) if notch_depth else [])
+    cutters = []
+    if notch_depth:
+        cutters.extend(header_map.get(wall_key, []))
+    cutters.extend(nogging_map.get(wall_key, []))
+    if cutters:
+        pieces = subtract_all([crv], cutters)
+    else:
+        pieces = [crv]
     for pc in pieces:
         outF.Add(pc, path)
 

@@ -78,6 +78,7 @@ def MapBack(crv, plane):
 outTop = gh.DataTree[System.Object]()
 outBot = gh.DataTree[System.Object]()
 outStuds = gh.DataTree[System.Object]()
+outNoggings = gh.DataTree[System.Object]()
 
 for b in range(P.BranchCount):
     branch = P.Branches[b]
@@ -289,7 +290,63 @@ for b in range(P.BranchCount):
                     if amp and amp.Area > 0.01:
                         outStuds.Add(MapBack(piece, localPlane), path)
 
+        # ----------------------------------------------------
+        # STEP 6: Generate Noggings (horizontal blocking)
+        # ----------------------------------------------------
+        if NG is not None and NG > 0 and len(studXs) >= 2:
+            sorted_xs = sorted(studXs)
+            nog_ys = []
+            ny = bbox.Min.Y + NG
+            while ny < bbox.Max.Y - 0.001:
+                nog_ys.append(ny)
+                ny += NG
+
+            for si in range(len(sorted_xs) - 1):
+                x_left = sorted_xs[si] + T / 2.0
+                x_right = sorted_xs[si + 1] - T / 2.0
+                if x_right - x_left < 0.001:
+                    continue
+
+                for nog_y in nog_ys:
+                    nog_rect = Rhino.Geometry.Polyline()
+                    nog_rect.Add(Rhino.Geometry.Point3d(x_left, nog_y - T / 2.0, 0))
+                    nog_rect.Add(Rhino.Geometry.Point3d(x_right, nog_y - T / 2.0, 0))
+                    nog_rect.Add(Rhino.Geometry.Point3d(x_right, nog_y + T / 2.0, 0))
+                    nog_rect.Add(Rhino.Geometry.Point3d(x_left, nog_y + T / 2.0, 0))
+                    nog_rect.Add(nog_rect[0])
+                    nog_crv = nog_rect.ToNurbsCurve()
+
+                    clipped = Rhino.Geometry.Curve.CreateBooleanIntersection(
+                        nog_crv, wallBoundary, 0.001)
+                    if not clipped:
+                        continue
+
+                    for cl in clipped:
+                        nog_pieces = [cl]
+                        for plate in allFinalPlates2D:
+                            next_nog = []
+                            for piece in nog_pieces:
+                                bb_p = piece.GetBoundingBox(True)
+                                bb_pl = plate.GetBoundingBox(True)
+                                bb_int = Rhino.Geometry.BoundingBox.Intersection(bb_p, bb_pl)
+                                if bb_int.IsValid:
+                                    diffs = Rhino.Geometry.Curve.CreateBooleanDifference(
+                                        piece, plate, 0.001)
+                                    if diffs is not None:
+                                        next_nog.extend(diffs)
+                                    else:
+                                        next_nog.append(piece)
+                                else:
+                                    next_nog.append(piece)
+                            nog_pieces = next_nog
+
+                        for piece in nog_pieces:
+                            amp = Rhino.Geometry.AreaMassProperties.Compute(piece)
+                            if amp and amp.Area > 0.01:
+                                outNoggings.Add(MapBack(piece, localPlane), path)
+
 # Assign outputs
 TP = outTop
 BP = outBot
 S  = outStuds
+NO = outNoggings

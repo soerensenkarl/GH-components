@@ -32,6 +32,7 @@ WALL_COLOR_MAP = {
     7: System.Drawing.Color.FromArgb(121, 85, 72),    # Bundrem - brown
     8: System.Drawing.Color.FromArgb(240, 98, 146),   # Vertikaloverligger Vindue - pink
     9: System.Drawing.Color.FromArgb(255, 64, 129),   # Vertikaloverligger Doer - deep pink
+    10: System.Drawing.Color.FromArgb(139, 195, 74),   # Afstivning - lime green
 }
 
 ROOF_COLOR_MAP = {
