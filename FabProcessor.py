@@ -106,57 +106,50 @@ def extend_stud_ends(crv, nd):
     return nc
 
 
-# C indices for each operation
-SPLIT_CATEGORIES    = {6, 7}          # top plates, bottom plates
-EXTEND_CATEGORIES   = {0, 1, 2}       # wall studs, window king studs, door king studs
-HORIZ_CATEGORIES    = {3, 4, 5, 6, 7}  # horizontal members to be notched (excludes VH 8,9)
+def extend_header_ends(crv, nd):
+    """Extend a header/sill curve by nd at both ends along its long axis."""
+    nc = crv.ToNurbsCurve()
+    # Find long axis via longest polyline edge
+    ok, poly = nc.TryGetPolyline()
+    long_axis = None
+    if ok and poly.Count >= 2:
+        best_len = -1.0
+        for i in range(poly.Count - 1):
+            v = poly[i + 1] - poly[i]
+            if v.Length > best_len:
+                best_len = v.Length
+                long_axis = rg.Vector3d(v)
+    if long_axis is None:
+        long_axis = nc.TangentAt(nc.Domain.Mid)
+    long_axis.Unitize()
 
-outF = gh.DataTree[System.Object]()
+    # Project control points onto long axis, find min/max
+    projs = []
+    for i in range(nc.Points.Count):
+        pt = nc.Points[i].Location
+        projs.append(pt.X * long_axis.X + pt.Y * long_axis.Y + pt.Z * long_axis.Z)
+    min_p = min(projs)
+    max_p = max(projs)
+    tol_p = (max_p - min_p) * 0.05 if (max_p - min_p) > 0 else 1.0
 
-split_len   = L  if (L  is not None and L  > 0) else None
-notch_depth = ND if (ND is not None and ND > 0) else None
+    for i in range(nc.Points.Count):
+        pt = nc.Points[i].Location
+        if abs(projs[i] - min_p) <= tol_p:
+            nc.Points.SetPoint(i, pt - long_axis * nd)
+        elif abs(projs[i] - max_p) <= tol_p:
+            nc.Points.SetPoint(i, pt + long_axis * nd)
+    return nc
 
-# wall_key = path with last element (C) stripped, used to match studs to plates
-stud_map   = {}  # wall_key -> [extended stud curves]
-plate_items = [] # [(curve, path, wall_key)]
-other_items = [] # [(curve, path)]
 
-for i in range(F.BranchCount):
-    path   = F.Paths[i]
-    branch = F.Branches[i]
-    c_idx  = path[path.Length - 1]
-    wall_key = tuple(path[j] for j in range(path.Length - 1))
-
-    for crv in branch:
-        if crv is None:
-            continue
-
-        if notch_depth and c_idx in EXTEND_CATEGORIES:
-            crv = extend_stud_ends(crv, notch_depth)
-            stud_map.setdefault(wall_key, []).append(crv)
-            other_items.append((crv, path))
-        elif c_idx in HORIZ_CATEGORIES:
-            pieces = split_curve_at_length(crv, split_len) if (split_len and c_idx in SPLIT_CATEGORIES) else [crv]
-            for pc in pieces:
-                plate_items.append((pc, path, wall_key))
-        else:
-            other_items.append((crv, path))
-
-# Output studs and pass-through items
-for crv, path in other_items:
-    outF.Add(crv, path)
-
-# Output horizontal members - boolean-difference extended studs to form notches
-for plate_crv, path, wall_key in plate_items:
-    studs = stud_map.get(wall_key, []) if notch_depth else []
-    pieces = [plate_crv]
-    for stud in studs:
+def subtract_all(pieces, cutters):
+    """Boolean-difference all cutters from a list of curve pieces."""
+    for cutter in cutters:
         next_pieces = []
         for piece in pieces:
             bb_int = rg.BoundingBox.Intersection(
-                piece.GetBoundingBox(True), stud.GetBoundingBox(True))
+                piece.GetBoundingBox(True), cutter.GetBoundingBox(True))
             if bb_int.IsValid:
-                diffs = rg.Curve.CreateBooleanDifference(piece, stud, 0.001)
+                diffs = rg.Curve.CreateBooleanDifference(piece, cutter, 0.001)
                 if diffs and len(diffs) > 0:
                     next_pieces.extend(diffs)
                 else:
@@ -164,6 +157,70 @@ for plate_crv, path, wall_key in plate_items:
             else:
                 next_pieces.append(piece)
         pieces = next_pieces
+    return pieces
+
+
+# C indices for each operation
+SPLIT_CATEGORIES  = {6, 7}        # top plates, bottom plates
+HORIZ_CATEGORIES  = {3, 4, 5, 6, 7}  # horizontal members (excludes VH 8,9)
+HEADER_CATEGORIES = {3, 4, 5}     # headers and sills - extend into king studs
+KING_CATEGORIES   = {1, 2}        # king studs - get notched by extended headers
+
+outF = gh.DataTree[System.Object]()
+
+split_len   = L  if (L  is not None and L  > 0) else None
+notch_depth = ND if (ND is not None and ND > 0) else None
+
+stud_map   = {}  # wall_key -> [extended vertical members (C=0,1,2)]
+header_map = {}  # wall_key -> [extended header/sill curves (C=3,4,5)]
+horiz_items = [] # [(curve, path, wall_key)] horizontal members to be notched by studs
+king_items  = [] # [(curve, path, wall_key)] king studs to be notched by headers
+other_items = [] # [(curve, path)] pass-through
+
+for i in range(F.BranchCount):
+    path     = F.Paths[i]
+    branch   = F.Branches[i]
+    c_idx    = path[path.Length - 1]
+    wall_key = tuple(path[j] for j in range(path.Length - 1))
+
+    for crv in branch:
+        if crv is None:
+            continue
+
+        if notch_depth and c_idx in {0, 1, 2}:
+            crv = extend_stud_ends(crv, notch_depth)
+            stud_map.setdefault(wall_key, []).append(crv)
+            if c_idx in KING_CATEGORIES:
+                king_items.append((crv, path, wall_key))
+            else:
+                other_items.append((crv, path))
+        elif c_idx in HEADER_CATEGORIES:
+            if notch_depth:
+                crv = extend_header_ends(crv, notch_depth)
+                header_map.setdefault(wall_key, []).append(crv)
+            other_items.append((crv, path))
+        elif c_idx in SPLIT_CATEGORIES:
+            pieces = split_curve_at_length(crv, split_len) if split_len else [crv]
+            for pc in pieces:
+                horiz_items.append((pc, path, wall_key))
+        elif c_idx in HORIZ_CATEGORIES:
+            horiz_items.append((crv, path, wall_key))
+        else:
+            other_items.append((crv, path))
+
+# Pass-through
+for crv, path in other_items:
+    outF.Add(crv, path)
+
+# Horizontal members - notched by extended vertical members
+for crv, path, wall_key in horiz_items:
+    pieces = subtract_all([crv], stud_map.get(wall_key, []) if notch_depth else [])
+    for pc in pieces:
+        outF.Add(pc, path)
+
+# King studs - notched by extended headers/sills
+for crv, path, wall_key in king_items:
+    pieces = subtract_all([crv], header_map.get(wall_key, []) if notch_depth else [])
     for pc in pieces:
         outF.Add(pc, path)
 
