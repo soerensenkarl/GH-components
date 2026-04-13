@@ -224,8 +224,9 @@ for b in range(P.BranchCount):
                     wb, lp, outH, path)
 
             # Vertical header above main header, height = wall thickness
-            ClipAdd(Rect(dx0 - TIM, dy1 + TIM, dx1 + TIM, dy1 + TIM + wall_t),
-                    wb, lp, outVH, path)
+            if V is None or V:
+                ClipAdd(Rect(dx0 - TIM, dy1 + TIM, dx1 + TIM, dy1 + TIM + wall_t),
+                        wb, lp, outVH, path)
 
 
 # -- Outputs ---------------------------------------------------

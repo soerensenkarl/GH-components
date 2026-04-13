@@ -8,6 +8,7 @@ Inputs:
     SD  - Span direction override per branch       [int, tree access]
             0 = default (span shortest direction)
             1 = flip 90 degrees
+    EB  - Enable edge beams / fascia (default False) [bool, item access]
 Outputs:
     R   - Rafter breps matching input tree structure
 """
@@ -20,8 +21,9 @@ import math
 # Set default values if inputs are missing
 if T is None: T = 45.0
 if CC is None: CC = 600.0
+if EB is None: EB = False
 
-def generate_rafters(brep, t, cc, flip=False, p0=None):
+def generate_rafters(brep, t, cc, flip=False, p0=None, inset=0.0):
     if not brep:
         return []
 
@@ -105,8 +107,79 @@ def generate_rafters(brep, t, cc, flip=False, p0=None):
                         solid = ext_srf.ToBrep().CapPlanarHoles(tol)
                         if solid:
                             rafter_breps.append(solid)
-                            
+
+    # Trim rafters to butt against edge beams
+    if inset > 0 and rafter_breps:
+        if span_short:
+            lo = rg.Point3d(bbox.Min.X - 1, bbox.Min.Y + inset, bbox.Min.Z - 1)
+            hi = rg.Point3d(bbox.Max.X + 1, bbox.Max.Y - inset, bbox.Max.Z + 1)
+        else:
+            lo = rg.Point3d(bbox.Min.X + inset, bbox.Min.Y - 1, bbox.Min.Z - 1)
+            hi = rg.Point3d(bbox.Max.X - inset, bbox.Max.Y + 1, bbox.Max.Z + 1)
+        clip = rg.Brep.CreateFromBox(rg.BoundingBox(lo, hi))
+        if clip:
+            trimmed = []
+            for rb in rafter_breps:
+                inter = rg.Brep.CreateBooleanIntersection(rb, clip, tol)
+                if inter:
+                    trimmed.extend(inter)
+            if trimmed:
+                rafter_breps = trimmed
+
     return rafter_breps
+
+
+def generate_edge_beams(brep, t, flip=False):
+    """Generate edge beams (fascia) perpendicular to rafters at span ends."""
+    if not brep:
+        return []
+
+    tol = sc.doc.ModelAbsoluteTolerance
+    bbox = brep.GetBoundingBox(True)
+    dx = bbox.Max.X - bbox.Min.X
+    dy = bbox.Max.Y - bbox.Min.Y
+
+    span_short = (dx > dy)
+    if flip:
+        span_short = not span_short
+
+    # Edge beams run along the span direction, placed at the two ends
+    # perpendicular to the rafters
+    if span_short:
+        # Rafters are thin in X, span Y -- edge beams at Y ends, run along X
+        beam_axis = rg.Vector3d.YAxis
+        min_val = bbox.Min.Y
+        max_val = bbox.Max.Y
+    else:
+        # Rafters are thin in Y, span X -- edge beams at X ends, run along Y
+        beam_axis = rg.Vector3d.XAxis
+        min_val = bbox.Min.X
+        max_val = bbox.Max.X
+
+    beam_breps = []
+    for pos in [min_val + t / 2.0, max_val - t / 2.0]:
+        if span_short:
+            origin = rg.Point3d(bbox.Center.X, pos, bbox.Center.Z)
+        else:
+            origin = rg.Point3d(pos, bbox.Center.Y, bbox.Center.Z)
+
+        plane = rg.Plane(origin, beam_axis)
+        rc, crvs, pts = rg.Intersect.Intersection.BrepPlane(brep, plane, tol)
+
+        if rc and crvs:
+            joined = rg.Curve.JoinCurves(crvs, tol)
+            for jc in joined:
+                if jc.IsClosed:
+                    move_vec = beam_axis * (-t / 2.0)
+                    jc.Translate(move_vec)
+                    ext_srf = rg.Surface.CreateExtrusion(jc, beam_axis * t)
+                    if ext_srf:
+                        solid = ext_srf.ToBrep().CapPlanarHoles(tol)
+                        if solid:
+                            beam_breps.append(solid)
+
+    return beam_breps
+
 
 # --- Tree Handling Logic ---
 
@@ -129,5 +202,9 @@ if B:
 
         for brep in branch:
             if brep:
-                rafters = generate_rafters(brep, T, CC, flip, P0)
+                rafters = generate_rafters(brep, T, CC, flip, P0, T if EB else 0.0)
                 R.AddRange(rafters, path)
+
+                if EB:
+                    beams = generate_edge_beams(brep, T, flip)
+                    R.AddRange(beams, path)

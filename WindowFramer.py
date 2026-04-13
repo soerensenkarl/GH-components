@@ -281,8 +281,9 @@ for b in range(P.BranchCount):
                     # Header: same slope as window edge, shifted up by TIM
                     ClipAdd(EdgeRectV(ax, ay, bx, by, TIM), wb, lp, outH, path)
                     # VH spans outer faces of king studs, height = wall thickness
-                    ClipAdd(VhRect(ax, ay, bx, by, wx0 - TIM, wx1 + TIM, TIM, wall_t),
-                            wb, lp, outVH, path)
+                    if V is None or V:
+                        ClipAdd(VhRect(ax, ay, bx, by, wx0 - TIM, wx1 + TIM, TIM, wall_t),
+                                wb, lp, outVH, path)
                 else:
                     # Sill: only generate if it fits above the wall bottom plate
                     sill_bottom = min(ay, by) - TIM
