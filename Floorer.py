@@ -8,9 +8,11 @@ Inputs:
     SD  - Span direction override per branch       [int, tree access]
             0 = default (span shortest direction)
             1 = flip 90 degrees
+    EC  - Edge beam count (default 1)              [int, item access]
+            Number of stacked edge beams at each span end
 Outputs:
     J   - Joist breps matching input tree structure
-    R   - Rim joist (kantbjaelke) breps matching input tree structure
+            Edge beams at sub-path C=1 (e.g. {2;0;1})
 """
 import Rhino.Geometry as rg
 import scriptcontext as sc
@@ -21,8 +23,43 @@ import math
 # Set default values if inputs are missing
 if T is None: T = 45.0
 if CC is None: CC = 600.0
+if EC is None: EC = 1
+EC = max(1, int(EC))
 
-def generate_joists(brep, t, cc, flip=False, p0=None):
+def trim_closed_curve(crv, lo_plane, hi_plane, rim_vec, trim_lo, trim_hi, tol):
+    """Trim a closed curve to the zone between two parallel planes."""
+    params = []
+    for plane in [lo_plane, hi_plane]:
+        events = rg.Intersect.Intersection.CurvePlane(crv, plane, tol)
+        if events:
+            for ev in events:
+                params.append(ev.ParameterA)
+    if len(params) < 4:
+        return crv
+    params.sort()
+    segments = crv.Split(params)
+    if not segments:
+        return crv
+    kept = []
+    for seg in segments:
+        mid = seg.PointAt((seg.Domain.Min + seg.Domain.Max) / 2.0)
+        v = mid.X * rim_vec.X + mid.Y * rim_vec.Y + mid.Z * rim_vec.Z
+        if trim_lo - tol <= v <= trim_hi + tol:
+            kept.append(seg)
+    if not kept:
+        return crv
+    all_crvs = list(kept)
+    for i in range(len(kept)):
+        end_pt = kept[i].PointAtEnd
+        next_start = kept[(i + 1) % len(kept)].PointAtStart
+        if end_pt.DistanceTo(next_start) > tol:
+            all_crvs.append(rg.LineCurve(end_pt, next_start))
+    joined = rg.Curve.JoinCurves(all_crvs, tol)
+    if joined and len(joined) == 1 and joined[0].IsClosed:
+        return joined[0]
+    return crv
+
+def generate_joists(brep, t, cc, flip=False, p0=None, ec=1):
     if not brep:
         return [], []
 
@@ -57,32 +94,59 @@ def generate_joists(brep, t, cc, flip=False, p0=None):
     else:
         grid_ref = start_center
 
-    # 1. Start Joist
-    centers.append(start_center)
+    # Inner boundaries of start/end stacks
+    inner_start = start_center + (ec - 1) * t
+    inner_end = end_center - (ec - 1) * t
+
+    # 1. Start Joists (ec stacked)
+    for k in range(ec):
+        centers.append(start_center + k * t)
 
     # 2. Intermediate Joists on global CC grid
-    n = int(math.ceil((start_center + 0.001 - grid_ref) / cc))
+    n = int(math.ceil((inner_start + 0.001 - grid_ref) / cc))
     while True:
         x = grid_ref + n * cc
-        if x >= end_center - 0.001:
+        if x >= inner_end - 0.001:
             break
         centers.append(x)
         n += 1
 
-    # 3. End Joist
+    # 3. End Joists (ec stacked)
     if len(centers) > 0:
-        gap = end_center - centers[-1]
+        gap = inner_end - centers[-1]
         if gap > t:
-            centers.append(end_center)
+            for k in range(ec):
+                centers.append(inner_end + k * t)
         elif gap > 0.001:
-            # Overlap: place two joists side by side at the end
-            centers[-1] = end_center - t
-            centers.append(end_center)
+            centers[-1] = inner_end - t
+            for k in range(ec):
+                centers.append(inner_end + k * t)
     else:
-        centers.append(end_center)
+        for k in range(ec):
+            centers.append(inner_end + k * t)
 
     joist_breps = []
     rim_breps = []
+
+    # Rim direction and trim bounds - joists stop at inner face of edge beams
+    if span_short:
+        rim_vec = rg.Vector3d.YAxis
+        rim_min = bbox.Min.Y
+        rim_max = bbox.Max.Y
+    else:
+        rim_vec = rg.Vector3d.XAxis
+        rim_min = bbox.Min.X
+        rim_max = bbox.Max.X
+
+    inset = ec * t
+    trim_lo = rim_min + inset
+    trim_hi = rim_max - inset
+    if span_short:
+        lo_plane = rg.Plane(rg.Point3d(0, trim_lo, 0), rim_vec)
+        hi_plane = rg.Plane(rg.Point3d(0, trim_hi, 0), rim_vec)
+    else:
+        lo_plane = rg.Plane(rg.Point3d(trim_lo, 0, 0), rim_vec)
+        hi_plane = rg.Plane(rg.Point3d(trim_hi, 0, 0), rim_vec)
 
     # Main joists
     for c in centers:
@@ -96,20 +160,22 @@ def generate_joists(brep, t, cc, flip=False, p0=None):
             joined = rg.Curve.JoinCurves(crvs, tol)
             for jc in joined:
                 if jc.IsClosed:
+                    jc = trim_closed_curve(jc, lo_plane, hi_plane, rim_vec, trim_lo, trim_hi, tol)
+                    if not jc.IsClosed:
+                        continue
                     jc.Translate(axis_vec * (-t / 2.0))
                     ext_srf = rg.Surface.CreateExtrusion(jc, axis_vec * t)
                     if ext_srf:
                         solid = ext_srf.ToBrep().CapPlanarHoles(tol)
                         if solid:
+                            solid.Faces.SplitKinkyFaces(0.01, True)
                             joist_breps.append(solid)
 
     # Rim joists (kantbjaelke) - perpendicular to main joists, at both ends of span
-    if span_short:
-        rim_vec = rg.Vector3d.YAxis
-        rim_centers = [bbox.Min.Y + t / 2.0, bbox.Max.Y - t / 2.0]
-    else:
-        rim_vec = rg.Vector3d.XAxis
-        rim_centers = [bbox.Min.X + t / 2.0, bbox.Max.X - t / 2.0]
+    rim_centers = []
+    for k in range(ec):
+        rim_centers.append(rim_min + t / 2.0 + k * t)
+        rim_centers.append(rim_max - t / 2.0 - k * t)
 
     for c in rim_centers:
         if span_short:
@@ -127,6 +193,7 @@ def generate_joists(brep, t, cc, flip=False, p0=None):
                     if ext_srf:
                         solid = ext_srf.ToBrep().CapPlanarHoles(tol)
                         if solid:
+                            solid.Faces.SplitKinkyFaces(0.01, True)
                             rim_breps.append(solid)
 
     return joist_breps, rim_breps
@@ -148,6 +215,8 @@ if B:
 
         for brep in branch:
             if brep:
-                joists, rims = generate_joists(brep, T, CC, flip, P0)
+                joists, rims = generate_joists(brep, T, CC, flip, P0, EC)
                 J.AddRange(joists, path)
-                J.AddRange(rims, path)
+                eb_path = gh.Kernel.Data.GH_Path(
+                    System.Array[int](list(path.Indices) + [1]))
+                J.AddRange(rims, eb_path)

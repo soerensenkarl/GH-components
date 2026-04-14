@@ -9,8 +9,11 @@ Inputs:
             0 = default (span shortest direction)
             1 = flip 90 degrees
     EB  - Enable edge beams / fascia (default False) [bool, item access]
+    RH  - Allowable ridge board heights              [float, list access]
+            Default: 95,120,145,...,495 (25mm steps)
 Outputs:
     R   - Rafter breps matching input tree structure
+            Ridge boards are placed under the parent path (e.g. {1})
 """
 import Rhino.Geometry as rg
 import scriptcontext as sc
@@ -22,6 +25,10 @@ import math
 if T is None: T = 45.0
 if CC is None: CC = 600.0
 if EB is None: EB = False
+if RH is None or not RH:
+    RH = [95, 120, 145, 170, 195, 220, 245, 270, 295, 320, 345, 370, 395, 420, 445, 470, 495]
+else:
+    RH = sorted([float(h) for h in RH])
 
 def generate_rafters(brep, t, cc, flip=False, p0=None, inset=0.0):
     if not brep:
@@ -106,6 +113,7 @@ def generate_rafters(brep, t, cc, flip=False, p0=None, inset=0.0):
                     if ext_srf:
                         solid = ext_srf.ToBrep().CapPlanarHoles(tol)
                         if solid:
+                            solid.Faces.SplitKinkyFaces(0.01, True)
                             rafter_breps.append(solid)
 
     # Trim rafters to butt against edge beams
@@ -176,15 +184,92 @@ def generate_edge_beams(brep, t, flip=False):
                     if ext_srf:
                         solid = ext_srf.ToBrep().CapPlanarHoles(tol)
                         if solid:
+                            solid.Faces.SplitKinkyFaces(0.01, True)
                             beam_breps.append(solid)
 
     return beam_breps
 
 
+def round_up_height(h, allowable):
+    """Return the smallest allowable height >= h."""
+    for ah in allowable:
+        if ah >= h - 0.01:
+            return ah
+    return allowable[-1]
+
+
+def find_ridge_boards(breps, t, rh=None):
+    """Find shared faces between brep pairs and create ridge boards."""
+    tol = sc.doc.ModelAbsoluteTolerance
+    boards = []
+
+    for i in range(len(breps)):
+        for j in range(i + 1, len(breps)):
+            ba, bb = breps[i], breps[j]
+            found = False
+
+            for fi in range(ba.Faces.Count):
+                if found:
+                    break
+                face = ba.Faces[fi]
+                amp = rg.AreaMassProperties.Compute(face)
+                if not amp or amp.Area < tol:
+                    continue
+                centroid = amp.Centroid
+
+                # Check if face centroid lies on brep_b surface
+                cp = bb.ClosestPoint(centroid)
+                if centroid.DistanceTo(cp) > tol * 10:
+                    continue
+
+                # Shared face - extract boundary curve
+                edge_crvs = []
+                loop = face.OuterLoop
+                for ti in range(loop.Trims.Count):
+                    edge = loop.Trims[ti].Edge
+                    if edge:
+                        edge_crvs.append(edge.DuplicateCurve())
+                joined = rg.Curve.JoinCurves(edge_crvs, tol)
+                if not joined or not joined[0].IsClosed:
+                    continue
+                crv = joined[0]
+
+                # Face normal for extrusion direction
+                rc, u, v = face.ClosestPoint(centroid)
+                if not rc:
+                    continue
+                normal = face.NormalAt(u, v)
+
+                # Create ridge board centered on shared face
+                crv.Translate(normal * (-t / 2.0))
+                ext = rg.Surface.CreateExtrusion(crv, normal * t)
+                if ext:
+                    solid = ext.ToBrep().CapPlanarHoles(tol)
+                    if solid:
+                        if rh:
+                            bb_s = solid.GetBoundingBox(True)
+                            current_h = bb_s.Max.Z - bb_s.Min.Z
+                            target_h = round_up_height(current_h, rh)
+                            if target_h > current_h + tol:
+                                scale_z = target_h / current_h
+                                top_pt = rg.Point3d(bb_s.Center.X, bb_s.Center.Y, bb_s.Max.Z)
+                                xform = rg.Transform.Scale(
+                                    rg.Plane(top_pt, rg.Vector3d.ZAxis),
+                                    1.0, 1.0, scale_z)
+                                solid.Transform(xform)
+                        solid.Faces.SplitKinkyFaces(0.01, True)
+                        boards.append(solid)
+                found = True
+
+    return boards
+
+
 # --- Tree Handling Logic ---
 
-# Initialize a standard Grasshopper DataTree to hold the results
+# Initialize output tree
 R = gh.DataTree[System.Object]()
+
+parent_groups = {}
 
 if B:
     for i in range(B.BranchCount):
@@ -208,3 +293,22 @@ if B:
                 if EB:
                     beams = generate_edge_beams(brep, T, flip)
                     R.AddRange(beams, path)
+
+        # Collect breps by parent path for ridge board detection
+        indices = list(path.Indices)
+        parent_key = tuple(indices[:-1]) if len(indices) > 1 else ()
+        if parent_key not in parent_groups:
+            parent_groups[parent_key] = []
+        for brep in branch:
+            if brep:
+                parent_groups[parent_key].append(brep)
+
+    # Generate ridge boards under parent path
+    for parent_key, breps in parent_groups.items():
+        if len(breps) < 2:
+            continue
+        boards = find_ridge_boards(breps, T, RH)
+        if boards:
+            ridge_idx = list(parent_key) + [0, 1] if parent_key else [0, 0, 1]
+            p = gh.Kernel.Data.GH_Path(System.Array[int](ridge_idx))
+            R.AddRange(boards, p)

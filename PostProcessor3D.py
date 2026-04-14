@@ -2,20 +2,23 @@
 
 GHPython component (Rhino 7 / GhPython)
 Inputs:
-    G   - 3D framing breps from Extruder (paths {wall;C})  [Brep, tree access]
-            C=0   wall studs
-            C=1   window king studs
-            C=2   door king studs
-            C=8   window vertical headers (VH)
-            C=9   door vertical headers (VH)
+    G   - 3D framing breps from Extruder (paths {A;B;C})   [Brep, tree access]
+            A=0 walls: C=0 studs, C=1 window kings, C=2 door kings,
+                       C=8 window VH, C=9 door VH
+            A=1 roof:  C=1 ridge board
+            A=2 floor: C=1 edge beam
+    ML  - Max length for ridge boards / edge beams (default 6000) [float, item access]
 Outputs:
     G   - Processed breps, same tree structure as input
-            Studs (C=0,1,2) are boolean-differenced against VH (C=8,9)
-            from the same wall.
+            Wall studs (C=0,1,2) boolean-differenced against VH (C=8,9).
+            Ridge boards split at ML intervals.
 """
 import Rhino.Geometry as rg
 import Grasshopper as gh
 import System
+import math
+
+if ML is None: ML = 6000.0
 
 TOL = 0.01
 
@@ -59,6 +62,47 @@ def subtract_breps(base, cutters):
     return results
 
 
+def split_by_max_length(brep, max_len):
+    """Split a brep along its longest axis into equal segments <= max_len."""
+    bb = brep.GetBoundingBox(True)
+    dx = bb.Max.X - bb.Min.X
+    dy = bb.Max.Y - bb.Min.Y
+    dz = bb.Max.Z - bb.Min.Z
+
+    if dx >= dy and dx >= dz:
+        axis, length, start = rg.Vector3d.XAxis, dx, bb.Min.X
+    elif dy >= dx and dy >= dz:
+        axis, length, start = rg.Vector3d.YAxis, dy, bb.Min.Y
+    else:
+        axis, length, start = rg.Vector3d.ZAxis, dz, bb.Min.Z
+
+    if length <= max_len:
+        return [brep]
+
+    n = int(math.ceil(length / max_len))
+    seg = length / n
+    extent = max(dx, dy, dz) + 100
+
+    cutters = []
+    for i in range(1, n):
+        pos = start + i * seg
+        origin = rg.Point3d(
+            pos if axis.X > 0 else bb.Center.X,
+            pos if axis.Y > 0 else bb.Center.Y,
+            pos if axis.Z > 0 else bb.Center.Z)
+        plane = rg.Plane(origin, axis)
+        srf = rg.PlaneSurface(plane,
+                              rg.Interval(-extent, extent),
+                              rg.Interval(-extent, extent))
+        cutters.append(srf.ToBrep())
+
+    cutter_list = System.Collections.Generic.List[rg.Brep](cutters)
+    pieces = brep.Split(cutter_list, TOL)
+    if pieces and len(pieces) > 1:
+        return list(pieces)
+    return [brep]
+
+
 # -- Pass 1: collect VH breps and all items, grouped by wall path key ------
 
 # vh_map_extended: wall_key -> [extended vh_brep, ...]  (for wall studs C=0)
@@ -89,12 +133,17 @@ for i in range(G.BranchCount):
 outG = gh.DataTree[System.Object]()
 
 for brep, path, c_idx, wall_key in all_items:
-    if c_idx == 0:
+    typology = path[0] if path.Length > 0 else -1
+
+    if typology == 0 and c_idx == 0:
         # Wall studs: use extended VH to cover notch protrusion
         pieces = subtract_breps(brep, vh_map_extended.get(wall_key, []))
-    elif c_idx in STUD_CATEGORIES:
+    elif typology == 0 and c_idx in STUD_CATEGORIES:
         # King studs: use original VH
         pieces = subtract_breps(brep, vh_map_original.get(wall_key, []))
+    elif (typology == 1 or typology == 2) and c_idx == 1:
+        # Ridge board / floor edge beam: split by max length
+        pieces = split_by_max_length(brep, ML)
     else:
         pieces = [brep]
     for pc in pieces:

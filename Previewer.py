@@ -37,10 +37,12 @@ WALL_COLOR_MAP = {
 
 ROOF_COLOR_MAP = {
     0: System.Drawing.Color.FromArgb(76, 175, 80),    # Spaer - green
+    1: System.Drawing.Color.FromArgb(27, 94, 32),     # Kippen - dark green
 }
 
 FLOOR_COLOR_MAP = {
     0: System.Drawing.Color.FromArgb(244, 164, 96),   # Gulvbjaelke - sandy wood
+    1: System.Drawing.Color.FromArgb(210, 130, 60),    # Kantbjaelke - darker wood
 }
 
 GLUELAM_COLOR_MAP = {
